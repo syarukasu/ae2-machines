@@ -1,0 +1,31 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '6.0.54' apply false
+    id 'net.neoforged.moddev' version '2.0.143' apply false
+}
+allprojects {
+    group = 'com.syaru.ae2machines'
+    version = '0.1.0'
+    repositories {
+        mavenCentral()
+        maven { url = 'https://modmaven.dev' }
+        maven { url = 'https://maven.blamejared.com' }
+        maven { url = 'https://maven.terraformersmc.com/releases' }
+    }
+}
+subprojects {
+    tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+    tasks.withType(Test).configureEach { useJUnitPlatform() }
+}
+
+ext.prepareGameTestWorld = { File directory ->
+    if (new File(directory, 'world/level.dat').exists()) return
+    directory.mkdirs()
+    def propertiesFile = new File(directory, 'server.properties')
+    def properties = new Properties()
+    if (propertiesFile.exists()) propertiesFile.withInputStream { properties.load(it) }
+    properties.setProperty('level-name', 'world')
+    properties.setProperty('level-type', 'minecraft:flat')
+    properties.setProperty('generate-structures', 'false')
+    properties.setProperty('generator-settings', '{"layers":[{"block":"minecraft:bedrock","height":1}],"biome":"minecraft:plains","features":false,"lakes":false}')
+    propertiesFile.withOutputStream { properties.store(it, 'AE2 Machines isolated GameTest world') }
+}

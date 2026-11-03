@@ -1,0 +1,1 @@
+{"loader":"ae2machines:virtual_pylon","render_type":"minecraft:cutout","textures":{"outside":"ae2machines:block/virtual_pylon/base","end":"ae2machines:block/virtual_pylon/base_end","inside":"ae2machines:block/virtual_pylon/dim","particle":"ae2machines:block/virtual_pylon/base"}}

@@ -1,0 +1,27 @@
+{
+  "includes": ["../common/common.json"],
+  "generatedBackground": { "width": 384, "height": 256 },
+  "text": {},
+  "widgets": {
+    "bay0": { "left": 6, "top": 52, "width": 34, "height": 20 },
+    "bay1": { "left": 6, "top": 74, "width": 34, "height": 20 },
+    "bay2": { "left": 6, "top": 96, "width": 34, "height": 20 },
+    "bay3": { "left": 6, "top": 118, "width": 34, "height": 20 },
+    "bay4": { "left": 6, "top": 140, "width": 34, "height": 20 },
+    "bay5": { "left": 6, "top": 162, "width": 34, "height": 20 },
+    "bay6": { "left": 6, "top": 184, "width": 34, "height": 20 },
+    "previous": { "left": 6, "bottom": 34, "width": 18, "height": 18 },
+    "next": { "left": 24, "bottom": 34, "width": 18, "height": 18 },
+    "eject": { "right": 26, "top": 28, "width": 18, "height": 18 },
+    "adjust0": { "left": 168, "bottom": 36, "width": 18, "height": 18 },
+    "adjust1": { "left": 188, "bottom": 36, "width": 18, "height": 18 },
+    "adjust2": { "right": 50, "bottom": 36, "width": 18, "height": 18 },
+    "adjust3": { "right": 30, "bottom": 36, "width": 18, "height": 18 },
+    "factory": { "left": 52, "top": 28, "width": 64, "height": 20 },
+    "structure": { "left": 118, "top": 28, "width": 64, "height": 20 },
+    "refresh": { "right": 106, "top": 28, "width": 18, "height": 18 },
+    "reset": { "right": 86, "top": 28, "width": 18, "height": 18 },
+    "layerUp": { "right": 66, "top": 28, "width": 18, "height": 18 },
+    "layerDown": { "right": 46, "top": 28, "width": 18, "height": 18 }
+  }
+}

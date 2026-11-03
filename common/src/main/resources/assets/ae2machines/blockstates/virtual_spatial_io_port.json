@@ -1,0 +1,10 @@
+{
+  "variants": {
+    "powered=false": {
+      "model": "ae2machines:block/virtual_spatial_io_port"
+    },
+    "powered=true": {
+      "model": "ae2machines:block/virtual_spatial_io_port_on"
+    }
+  }
+}

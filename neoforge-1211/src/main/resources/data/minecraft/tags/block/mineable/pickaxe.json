@@ -1,0 +1,10 @@
+{
+  "replace": false,
+  "values": [
+    "ae2machines:spatial_accelerator",
+    "ae2machines:virtual_energy_port",
+    "ae2machines:virtual_spatial_marker",
+    "ae2machines:computation_power_port",
+    "ae2machines:virtual_spatial_io_port"
+  ]
+}

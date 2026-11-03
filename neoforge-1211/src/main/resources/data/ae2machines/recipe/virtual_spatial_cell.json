@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "QQQ",
+    "IPI",
+    "III"
+  ],
+  "key": {
+    "Q": {
+      "item": "ae2:fluix_crystal"
+    },
+    "P": {
+      "item": "ae2:engineering_processor"
+    },
+    "I": {
+      "item": "minecraft:iron_ingot"
+    }
+  },
+  "result": {
+    "id": "ae2machines:virtual_spatial_cell",
+    "count": 1
+  }
+}

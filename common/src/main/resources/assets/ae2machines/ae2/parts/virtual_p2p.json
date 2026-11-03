@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "ae2:model",
+    "model": "ae2machines:part/virtual_p2p_input"
+  }
+}

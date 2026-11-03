@@ -1,0 +1,18 @@
+plugins { id 'java-library' }
+sourceSets { benchmark { compileClasspath += sourceSets.main.output; runtimeClasspath += sourceSets.main.output } }
+java { toolchain.languageVersion = JavaLanguageVersion.of(17) }
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.10.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    benchmarkImplementation 'org.openjdk.jmh:jmh-core:1.37'
+    benchmarkAnnotationProcessor 'org.openjdk.jmh:jmh-generator-annprocess:1.37'
+}
+tasks.register('benchmark', JavaExec) {
+    dependsOn benchmarkClasses
+    classpath = sourceSets.benchmark.runtimeClasspath
+    mainClass = 'org.openjdk.jmh.Main'
+    args '.*(BatchEngineBenchmark|JournalBenchmark).*', '-wi', '1', '-i', '2', '-w', '1s', '-r', '1s', '-f', '1',
+            '-rf', 'json', '-rff', layout.buildDirectory.file('reports/benchmark.json').get().asFile.absolutePath
+    doFirst { layout.buildDirectory.dir('reports').get().asFile.mkdirs() }
+}

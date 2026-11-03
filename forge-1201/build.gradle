@@ -1,0 +1,224 @@
+plugins { id 'net.minecraftforge.gradle' }
+def gameTestPath = 'build/dev9/gametest' + (project.hasProperty('withMek') ? '-mek' : '') + (project.hasProperty('withAco') ? '-aco' : '') + (project.hasProperty('withChem') ? '-chem' : '') + (project.hasProperty('withGt') ? '-gt' : '')
+if(project.hasProperty('restartPhase')) gameTestPath += '-restart'
+if(project.hasProperty('crashPhase')) gameTestPath += '-crash'
+if(project.hasProperty('externalCrashPhase')) gameTestPath += '-external-crash'
+if(project.hasProperty('handoffCrash')) gameTestPath += '-handoff'
+if(project.hasProperty('testAttempt')) gameTestPath += '-' + project.property('testAttempt')
+java { toolchain.languageVersion = JavaLanguageVersion.of(17) }
+base { archivesName = 'ae2-machines-forge-1.20.1' }
+sourceSets.main.java.srcDir '../common/src/main/java'
+sourceSets.main.java.srcDir '../engine/src/main/java'
+sourceSets.main.resources.srcDir '../common/src/main/resources'
+sourceSets.test.java.srcDir '../common/src/test/java'
+sourceSets {
+    gameTest {
+        java.srcDir '../common/src/gameTest/java'
+        resources.srcDir '../common/src/gameTest/resources'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+    prismAcceptance {
+        compileClasspath += sourceSets.gameTest.output + sourceSets.gameTest.compileClasspath
+        runtimeClasspath += sourceSets.gameTest.output + sourceSets.gameTest.runtimeClasspath
+    }
+}
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+    copyIdeResources = true
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', project.file('build/createSrgToMcp/output.srg').absolutePath
+            mods { ae2machines { source sourceSets.main } }
+        }
+        client {
+            if(project.hasProperty('visualSmoke')) {
+                property 'machines.visual', 'true'
+                property 'machines.previewVisual', project.hasProperty('previewVisual').toString()
+                property 'machines.viewerVisual', (project.findProperty('recipeViewer') ?: '').toString()
+                property 'machines.surfaceVisual', project.hasProperty('surfaceVisual').toString()
+                property 'machines.spatialIoVisual', project.hasProperty('spatialIoVisual').toString()
+                property 'machines.remoteAccessVisual', project.hasProperty('remoteAccessVisual').toString()
+                args '--quickPlaySingleplayer', (project.findProperty('visualWorld') ?: 'visual-dev2'), '--width', '1200', '--height', '900'
+                mods { ae2machines_test { source sourceSets.gameTest } }
+            }
+        }
+        server { args '--nogui' }
+        gameTestServer {
+            workingDirectory project.file(gameTestPath)
+            property 'forge.enabledGameTestNamespaces', 'ae2machines_test'
+            property 'machines.report', file(gameTestPath + '/results.xml').absolutePath
+            property 'machines.withAco', project.hasProperty('withAco').toString()
+            property 'machines.withMek', project.hasProperty('withMek').toString()
+            property 'machines.scaleSamples', (project.findProperty('scaleSamples') ?: '3').toString()
+            property 'machines.checkpointBaseline', project.hasProperty('checkpointBaseline').toString()
+            property 'machines.admissionBaseline', project.hasProperty('admissionBaseline').toString()
+            property 'machines.handoffQuantity', (project.findProperty('handoffQuantity') ?: '2').toString()
+            property 'machines.pipelineHandoff', project.hasProperty('pipelineHandoff').toString()
+            property 'machines.liveTicks', project.hasProperty('liveTicks').toString()
+            property 'machines.secondStageHandoff', project.hasProperty('secondStageHandoff').toString()
+            property 'machines.withChem', project.hasProperty('withChem').toString()
+            property 'machines.withGt', project.hasProperty('withGt').toString()
+            property 'machines.recoveryMods', project.hasProperty('withRecoveryMods').toString()
+            property 'machines.handoffCrash', project.findProperty('handoffCrash') ?: ''
+            property 'machines.handoffOutput', project.hasProperty('handoffOutput').toString()
+            property 'machines.restartPhase', project.findProperty('restartPhase') ?: ''
+            property 'machines.crashPhase', project.findProperty('crashPhase') ?: ''
+            property 'machines.furnaceCrash', project.hasProperty('furnaceCrash').toString()
+            property 'machines.assemblerCrash', project.hasProperty('assemblerCrash').toString()
+            property 'machines.furnaceOrderCrash', project.hasProperty('furnaceOrderCrash').toString()
+            property 'machines.passiveAssemblerCrash', project.hasProperty('passiveAssemblerCrash').toString()
+            property 'machines.factoryCrash', project.hasProperty('factoryCrash').toString()
+            property 'machines.nativeWorldPhase', project.findProperty('nativeWorldPhase') ?: ''
+            property 'machines.nativeMoveCrash', project.findProperty('nativeMoveCrash') ?: ''
+            property 'machines.withCreate', project.hasProperty('withCreate').toString()
+            property 'machines.nativeMeOnly', project.hasProperty('nativeMeOnly').toString()
+            property 'machines.nativeWorldBatch', project.hasProperty('nativeWorldBatch').toString()
+            property 'machines.nativeWorldBatchCrash', project.findProperty('nativeWorldBatchCrash') ?: ''
+            property 'machines.acoV2Only', project.hasProperty('acoV2Only').toString()
+            property 'machines.acoV2Crash', project.hasProperty('acoV2Crash').toString()
+            property 'machines.requireAcoIntent', project.hasProperty('requireAcoIntent').toString()
+            property 'machines.nativeMeCrash', project.hasProperty('nativeMeCrash').toString()
+            property 'machines.nativeMeLarge', project.hasProperty('nativeMeLarge').toString()
+            property 'machines.nativeMeKind', project.findProperty('nativeMeKind') ?: 'crusher'
+            property 'machines.withMekStructures', project.hasProperty('withMekStructures').toString()
+            property 'machines.evolvedLegacy', (project.findProperty('evolvedVersion') ?: '').toString().startsWith('1.2.1').toString()
+            property 'machines.gtWideCrash', project.hasProperty('gtWideCrash').toString()
+            property 'machines.parallelCrash', project.hasProperty('parallelCrash').toString()
+            property 'machines.unknownFurnaceCrash', project.hasProperty('unknownFurnaceCrash').toString()
+            property 'machines.externalCrashPhase', project.findProperty('externalCrashPhase') ?: ''
+            mods { ae2machines_test { source sourceSets.gameTest } }
+        }
+    }
+}
+repositories { flatDir { dirs '../deps' } }
+def acoVersion = project.findProperty('acoTestVersion') ?: 'machines.2'
+def acoCompileVersion = 'machines.2'
+def ae2Version = project.findProperty('ae2TestVersion') ?: '15.4.10'
+dependencies {
+    prismAcceptanceCompileOnly fg.deobf('mekanism:Mekanism:1.20.1-10.4.16.80:generators') { transitive = false }
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.20'
+    implementation fg.deobf("appeng:appliedenergistics2-forge:${ae2Version}")
+    runtimeOnly fg.deobf('org.appliedenergistics:guideme:20.1.7')
+    compileOnly fg.deobf('local:me-access-forge:0.1.0-alpha.11-virtual-cells.1')
+    if(project.hasProperty('withMeAccess')) runtimeOnly fg.deobf('local:me-access-forge:0.1.0-alpha.11-virtual-cells.1')
+    compileOnly fg.deobf("com.syaru:aco-forge:${acoCompileVersion}")
+    compileOnly fg.deobf('mekanism:Mekanism:1.20.1-10.4.16.80') { transitive = false }
+    compileOnly fg.deobf('local:appmek-forge:1.4.3')
+    compileOnly fg.deobf('local:gtceu-forge:7.5.3')
+    compileOnly fg.deobf("local:ldlib-forge-1.20.1:${project.findProperty('ldlibTestVersion') ?: '1.0.40.b'}")
+    compileOnly fg.deobf('dev.emi:emi-forge:1.1.24+1.20.1')
+    compileOnly 'mezz.jei:jei-1.20.1-common-api:15.20.0.132'
+    if(project.findProperty('recipeViewer') == 'emi') runtimeOnly fg.deobf('dev.emi:emi-forge:1.1.24+1.20.1')
+    if(project.findProperty('recipeViewer') == 'jei') runtimeOnly fg.deobf('mezz.jei:jei-1.20.1-forge:15.20.0.132')
+    if(project.hasProperty('withLdlib')) runtimeOnly fg.deobf("local:ldlib-forge-1.20.1:${project.findProperty('ldlibTestVersion') ?: '1.0.40.b'}")
+    compileOnly fg.deobf('local:advancedae-forge:1.3.6')
+    if(project.hasProperty('withRecoveryMods')) {
+        runtimeOnly fg.deobf('local:advancedae-forge:1.3.6')
+        runtimeOnly fg.deobf('local:megacells-forge:2.4.6')
+        runtimeOnly fg.deobf('local:merequester-forge:1.1.5')
+        runtimeOnly fg.deobf('local:cloth-forge:11.1.136')
+        runtimeOnly fg.deobf('local:geckolib-forge:4.8.3')
+    }
+    if(project.hasProperty('withGt')) runtimeOnly fg.deobf('local:gtceu-forge:7.5.3')
+    if(project.hasProperty('withCreate')) runtimeOnly fg.deobf('local:create-forge:6.0.8')
+    if (project.hasProperty('withChem')) runtimeOnly fg.deobf('local:appmek-forge:1.4.3')
+    if (project.hasProperty('withMek')) runtimeOnly fg.deobf('mekanism:Mekanism:1.20.1-10.4.16.80') { transitive = false }
+    if (project.hasProperty('withMekStructures')) runtimeOnly fg.deobf('mekanism:Mekanism:1.20.1-10.4.16.80:generators') { transitive = false }
+    if (project.hasProperty('withMekExtras')) runtimeOnly fg.deobf('local:mekextras-forge:1.5.0')
+    if (project.hasProperty('withEvolved')) {
+        runtimeOnly fg.deobf("local:evolved-forge:${project.findProperty('evolvedVersion') ?: '1.3.0-fix2'}")
+        runtimeOnly fg.deobf('local:igleelib-forge:1.2.7')
+    }
+    if (project.hasProperty('withAco')) runtimeOnly fg.deobf(acoVersion.startsWith('current.')?'com.syaru.current:aco-forge-current:'+acoVersion.substring('current.'.length()):"com.syaru:aco-forge:${acoVersion}")
+    testImplementation platform('org.junit:junit-bom:5.10.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
+    testImplementation fg.deobf("com.syaru:aco-forge:${acoCompileVersion}")
+    testImplementation fg.deobf('mekanism:Mekanism:1.20.1-10.4.16.80') { transitive = false }
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+}
+tasks.register('createMixinMappings') {
+    dependsOn 'createMcpToSrg'
+    inputs.file('build/createMcpToSrg/output.tsrg')
+    outputs.file('build/mixinMappings/output.srg')
+    doLast {
+        net.minecraftforge.srgutils.IMappingFile.load(file('build/createMcpToSrg/output.tsrg'))
+                .write(file('build/mixinMappings/output.srg').toPath(), net.minecraftforge.srgutils.IMappingFile.Format.SRG, false)
+    }
+}
+tasks.named('compileJava', JavaCompile) {
+    dependsOn 'createMixinMappings'
+    options.compilerArgs += ['-AreobfSrgFile=' + file('build/mixinMappings/output.srg').absolutePath,
+                            '-AoutRefMapFile=' + file('build/classes/java/main/ae2machines.refmap.json').absolutePath]
+}
+tasks.named('jar') {
+    manifest.attributes('MixinConfigs': 'ae2machines.mixins.json')
+    from rootProject.file('assets-reference/LICENSE_ASSETS.txt')
+    finalizedBy 'reobfJar'
+}
+tasks.register('prismAcceptanceJar', Jar) {
+    dependsOn 'prismAcceptanceClasses'
+    archiveClassifier = 'prism-acceptance'
+    from(sourceSets.gameTest.output) {
+        exclude 'META-INF/mods.toml', 'META-INF/MANIFEST.MF', 'ae2machines-tests.mixins.json', 'prism-acceptance.toml', 'com/syaru/ae2machines/test/MachinesGameTests*.class'
+    }
+    from sourceSets.prismAcceptance.output
+    from('src/gameTest/resources/prism-acceptance.toml') { into 'META-INF'; rename { 'mods.toml' } }
+    manifest.attributes('MixinConfigs': 'ae2machines-acceptance.mixins.json')
+    finalizedBy 'reobfPrismAcceptanceJar'
+}
+reobf { prismAcceptanceJar {} }
+tasks.register('prismMainReferenceJar', Jar) {
+    dependsOn 'classes'
+    archiveClassifier = 'acceptance-reference'
+    destinationDirectory = layout.buildDirectory.dir('prism-reference')
+    from sourceSets.main.output
+}
+tasks.named('reobfPrismAcceptanceJar') {
+    dependsOn 'prismMainReferenceJar'
+    libraries.from tasks.named('prismMainReferenceJar')
+}
+
+tasks.register('inspectFactorySnapshot', JavaExec) {
+    dependsOn 'prismAcceptanceClasses'
+    classpath = sourceSets.prismAcceptance.runtimeClasspath
+    mainClass = 'com.syaru.ae2machines.test.FactorySnapshotAudit'
+    doFirst { args project.property('journalDir'), project.property('factoryId') }
+}
+processResources {
+    inputs.property 'version', project.version
+    inputs.property 'clientPreviewMixin', 'LdlibPreviewModelDataMixin'
+    filesMatching('META-INF/mods.toml') { expand version: project.version }
+    filesMatching('ae2machines.mixins.json') {
+        filter { line -> line.replace('"minVersion": "0.8",', '"minVersion": "0.8", "refmap": "ae2machines.refmap.json",').replace('"MekTransportEnergyMixin",','"MekTransportEnergyMixin", "MekTransportStackMixin",').replace('"MekTurbineParallelMixin",','"MekTurbineParallelMixin", "MekTurbineCondenserMixin",').replace('"injectors": {','"client": ["LdlibPreviewModelDataMixin"], "injectors": {') }
+    }
+}
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    def report = file(gameTestPath + '/results.xml')
+    doFirst {
+        rootProject.prepareGameTestWorld(file(gameTestPath))
+        if (report.exists()) report.delete()
+    }
+    doLast {
+        if (!report.isFile()) throw new GradleException('GameTest did not produce a result report')
+        def xml = new groovy.xml.XmlSlurper().parse(report)
+        def cases = xml.depthFirst().findAll { it.name() == 'testcase' }
+        def failures = cases.findAll { !it.failure.isEmpty() || !it.error.isEmpty() || !it.skipped.isEmpty() }
+        def expected = (project.hasProperty('withMek') ? (project.hasProperty('factoryCrash') ? 21 : 33) : 20) + (project.hasProperty('withChem') ? 9 : 0) + (project.hasProperty('withGt') ? 11 : 0) + (project.hasProperty('withGt') && project.hasProperty('withChem') ? 1 : 0) + (project.hasProperty('withGt') && project.hasProperty('withMek') ? 1 : 0)
+        expected+=6
+        if(project.hasProperty('withCreate')) expected+=7
+        if(project.hasProperty('withCreate') && project.hasProperty('withMek')) expected++
+        if(project.hasProperty('withCreate') && project.hasProperty('withMek') && project.hasProperty('withChem')) expected+=2
+        if(project.hasProperty('withCreate') && project.hasProperty('withMek') && project.hasProperty('withGt')) expected+=3
+        if(project.hasProperty('withMekStructures')) expected+=3
+        if(project.hasProperty('withMek') && !project.hasProperty('factoryCrash')) expected++
+        if(project.hasProperty('nativeMoveCrash'))expected=1
+        if(project.hasProperty('nativeMeOnly'))expected=project.findProperty('nativeMeKind')=='mek-coverage'?42:1
+        if(project.hasProperty('acoV2Only'))expected=1
+        if (cases.size() != expected || !failures.isEmpty()) throw new GradleException("GameTests incomplete or failed: ${cases.size()} cases, ${failures.size()} failed")
+    }
+}

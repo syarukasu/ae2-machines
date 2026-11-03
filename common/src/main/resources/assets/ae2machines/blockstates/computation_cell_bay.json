@@ -1,0 +1,64 @@
+{
+  "variants": {
+    "facing=north,formed=false,filled=false": {
+      "model": "ae2machines:block/computation/bay_empty_loose"
+    },
+    "facing=north,formed=false,filled=true": {
+      "model": "ae2machines:block/computation/bay_filled_loose"
+    },
+    "facing=north,formed=true,filled=false": {
+      "model": "ae2machines:block/computation/bay_empty_formed"
+    },
+    "facing=north,formed=true,filled=true": {
+      "model": "ae2machines:block/computation/bay_filled_formed"
+    },
+    "facing=east,formed=false,filled=false": {
+      "model": "ae2machines:block/computation/bay_empty_loose",
+      "y": 90
+    },
+    "facing=east,formed=false,filled=true": {
+      "model": "ae2machines:block/computation/bay_filled_loose",
+      "y": 90
+    },
+    "facing=east,formed=true,filled=false": {
+      "model": "ae2machines:block/computation/bay_empty_formed",
+      "y": 90
+    },
+    "facing=east,formed=true,filled=true": {
+      "model": "ae2machines:block/computation/bay_filled_formed",
+      "y": 90
+    },
+    "facing=south,formed=false,filled=false": {
+      "model": "ae2machines:block/computation/bay_empty_loose",
+      "y": 180
+    },
+    "facing=south,formed=false,filled=true": {
+      "model": "ae2machines:block/computation/bay_filled_loose",
+      "y": 180
+    },
+    "facing=south,formed=true,filled=false": {
+      "model": "ae2machines:block/computation/bay_empty_formed",
+      "y": 180
+    },
+    "facing=south,formed=true,filled=true": {
+      "model": "ae2machines:block/computation/bay_filled_formed",
+      "y": 180
+    },
+    "facing=west,formed=false,filled=false": {
+      "model": "ae2machines:block/computation/bay_empty_loose",
+      "y": 270
+    },
+    "facing=west,formed=false,filled=true": {
+      "model": "ae2machines:block/computation/bay_filled_loose",
+      "y": 270
+    },
+    "facing=west,formed=true,filled=false": {
+      "model": "ae2machines:block/computation/bay_empty_formed",
+      "y": 270
+    },
+    "facing=west,formed=true,filled=true": {
+      "model": "ae2machines:block/computation/bay_filled_formed",
+      "y": 270
+    }
+  }
+}

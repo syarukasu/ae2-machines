@@ -1,0 +1,34 @@
+{
+  "variants": {
+    "facing=north,formed=false": {
+      "model": "ae2machines:block/computation/parallel_t1_loose"
+    },
+    "facing=north,formed=true": {
+      "model": "ae2machines:block/computation/parallel_t1_formed"
+    },
+    "facing=east,formed=false": {
+      "model": "ae2machines:block/computation/parallel_t1_loose",
+      "y": 90
+    },
+    "facing=east,formed=true": {
+      "model": "ae2machines:block/computation/parallel_t1_formed",
+      "y": 90
+    },
+    "facing=south,formed=false": {
+      "model": "ae2machines:block/computation/parallel_t1_loose",
+      "y": 180
+    },
+    "facing=south,formed=true": {
+      "model": "ae2machines:block/computation/parallel_t1_formed",
+      "y": 180
+    },
+    "facing=west,formed=false": {
+      "model": "ae2machines:block/computation/parallel_t1_loose",
+      "y": 270
+    },
+    "facing=west,formed=true": {
+      "model": "ae2machines:block/computation/parallel_t1_formed",
+      "y": 270
+    }
+  }
+}

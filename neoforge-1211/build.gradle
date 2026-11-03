@@ -1,0 +1,162 @@
+plugins { id 'net.neoforged.moddev' }
+def gameTestPath = 'build/dev9/gametest' + (project.hasProperty('withMek') ? '-mek' : '') + (project.hasProperty('withAco') ? '-aco' : '') + (project.hasProperty('withChem') ? '-chem' : '') + (project.hasProperty('withGt') ? '-gt' : '')
+if(project.hasProperty('restartPhase')) gameTestPath += '-restart'
+if(project.hasProperty('crashPhase')) gameTestPath += '-crash'
+if(project.hasProperty('externalCrashPhase')) gameTestPath += '-external-crash'
+if(project.hasProperty('handoffCrash')) gameTestPath += '-handoff'
+if(project.hasProperty('testAttempt')) gameTestPath += '-' + project.property('testAttempt')
+java { toolchain.languageVersion = JavaLanguageVersion.of(21) }
+base { archivesName = 'ae2-machines-neoforge-1.21.1' }
+sourceSets.main.java.srcDir '../common/src/main/java'
+sourceSets.main.java.srcDir '../engine/src/main/java'
+sourceSets.main.resources.srcDir '../common/src/main/resources'
+sourceSets.test.java.srcDir '../common/src/test/java'
+sourceSets {
+    gameTest {
+        java.srcDir '../common/src/gameTest/java'
+        resources.srcDir '../common/src/gameTest/resources'
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+neoForge {
+    version = '21.1.247'
+    runs {
+        client {
+            client(); gameDirectory = file('run')
+            if(project.hasProperty('visualSmoke')) {
+                systemProperty 'machines.visual', 'true'
+                systemProperty 'machines.previewVisual', project.hasProperty('previewVisual').toString()
+                systemProperty 'machines.viewerVisual', (project.findProperty('recipeViewer') ?: '').toString()
+            systemProperty 'machines.surfaceVisual', project.hasProperty('surfaceVisual').toString()
+                systemProperty 'machines.remoteAccessVisual', project.hasProperty('remoteAccessVisual').toString()
+            systemProperty 'machines.spatialIoVisual', project.hasProperty('spatialIoVisual').toString()
+                programArguments.addAll('--quickPlaySingleplayer', (project.findProperty('visualWorld') ?: 'visual-dev2'), '--width', '1200', '--height', '900')
+            }
+        }
+        server { server(); gameDirectory = file('run-server'); programArgument '--nogui' }
+        gameTestServer {
+            type = 'gameTestServer'; gameDirectory = file(gameTestPath)
+            systemProperty 'neoforge.enabledGameTestNamespaces', 'ae2machines_test'
+            systemProperty 'machines.report', file(gameTestPath + '/results.xml').absolutePath
+            systemProperty 'machines.withAco', project.hasProperty('withAco').toString()
+            systemProperty 'machines.withMek', project.hasProperty('withMek').toString()
+            systemProperty 'machines.scaleSamples', (project.findProperty('scaleSamples') ?: '3').toString()
+            systemProperty 'machines.checkpointBaseline', project.hasProperty('checkpointBaseline').toString()
+            systemProperty 'machines.admissionBaseline', project.hasProperty('admissionBaseline').toString()
+            systemProperty 'machines.handoffQuantity', (project.findProperty('handoffQuantity') ?: '2').toString()
+        systemProperty 'machines.pipelineHandoff', project.hasProperty('pipelineHandoff').toString()
+        systemProperty 'machines.liveTicks', project.hasProperty('liveTicks').toString()
+        systemProperty 'machines.secondStageHandoff', project.hasProperty('secondStageHandoff').toString()
+            systemProperty 'machines.withChem', project.hasProperty('withChem').toString()
+            systemProperty 'machines.withGt', project.hasProperty('withGt').toString()
+            systemProperty 'machines.recoveryMods', project.hasProperty('withRecoveryMods').toString()
+            systemProperty 'machines.handoffCrash', project.findProperty('handoffCrash') ?: ''
+            systemProperty 'machines.handoffOutput', project.hasProperty('handoffOutput').toString()
+            systemProperty 'machines.restartPhase', project.findProperty('restartPhase') ?: ''
+            systemProperty 'machines.crashPhase', project.findProperty('crashPhase') ?: ''
+            systemProperty 'machines.furnaceCrash', project.hasProperty('furnaceCrash').toString()
+            systemProperty 'machines.assemblerCrash', project.hasProperty('assemblerCrash').toString()
+            systemProperty 'machines.furnaceOrderCrash', project.hasProperty('furnaceOrderCrash').toString()
+            systemProperty 'machines.passiveAssemblerCrash', project.hasProperty('passiveAssemblerCrash').toString()
+            systemProperty 'machines.factoryCrash', project.hasProperty('factoryCrash').toString()
+            systemProperty 'machines.nativeWorldPhase', project.findProperty('nativeWorldPhase') ?: ''
+            systemProperty 'machines.nativeMoveCrash', project.findProperty('nativeMoveCrash') ?: ''
+            systemProperty 'machines.withCreate', project.hasProperty('withCreate').toString()
+            systemProperty 'machines.nativeMeOnly', project.hasProperty('nativeMeOnly').toString()
+            systemProperty 'machines.nativeWorldBatch', project.hasProperty('nativeWorldBatch').toString()
+            systemProperty 'machines.nativeWorldBatchCrash', project.findProperty('nativeWorldBatchCrash') ?: ''
+            systemProperty 'machines.acoV2Only', project.hasProperty('acoV2Only').toString()
+            systemProperty 'machines.acoV2Crash', project.hasProperty('acoV2Crash').toString()
+            systemProperty 'machines.requireAcoIntent', project.hasProperty('requireAcoIntent').toString()
+            systemProperty 'machines.nativeMeCrash', project.hasProperty('nativeMeCrash').toString()
+            systemProperty 'machines.nativeMeLarge', project.hasProperty('nativeMeLarge').toString()
+            systemProperty 'machines.nativeMeKind', project.findProperty('nativeMeKind') ?: 'crusher'
+            systemProperty 'machines.withMekStructures', project.hasProperty('withMekStructures').toString()
+            systemProperty 'machines.evolvedLegacy', (project.findProperty('evolvedVersion') ?: '').toString().startsWith('1.2.1').toString()
+            systemProperty 'machines.gtWideCrash', project.hasProperty('gtWideCrash').toString()
+            systemProperty 'machines.parallelCrash', project.hasProperty('parallelCrash').toString()
+            systemProperty 'machines.unknownFurnaceCrash', project.hasProperty('unknownFurnaceCrash').toString()
+            systemProperty 'machines.externalCrashPhase', project.findProperty('externalCrashPhase') ?: ''
+        }
+    }
+    mods {
+        ae2machines { sourceSet(sourceSets.main) }
+        ae2machines_test { sourceSet(sourceSets.gameTest) }
+    }
+    addModdingDependenciesTo sourceSets.test
+    addModdingDependenciesTo sourceSets.gameTest
+}
+def acoVersion = project.findProperty('acoTestVersion') ?: 'machines.3'
+def acoCompileVersion = 'machines.3'
+dependencies {
+    implementation "org.appliedenergistics:appliedenergistics2:${project.hasProperty('withMeAccess')?'19.2.18':'19.2.17'}"
+    runtimeOnly 'org.appliedenergistics:guideme:21.1.17'
+    compileOnly files('../deps/me-access-neoforge-0.1.0-alpha.11-virtual-cells.1.jar')
+    if(project.hasProperty('withMeAccess')) runtimeOnly files('../deps/me-access-neoforge-0.1.0-alpha.11-virtual-cells.1.jar')
+    compileOnly files("../deps/aco-neoforge-${acoCompileVersion}.jar")
+    compileOnly('mekanism:Mekanism:1.21.1-10.7.19.85') { transitive = false }
+    compileOnly files('../deps/appmek-neoforge-1.6.3.jar')
+    compileOnly files('../deps/gtceu-neoforge-8.0.0-36a6b38.jar')
+    compileOnly files('../deps/neoforge-7.0.2-ldlib-neoforge-1.21.1-1.0.35.a.jar')
+    compileOnly 'dev.emi:emi-neoforge:1.1.24+1.21.1'
+    compileOnly 'mezz.jei:jei-1.21.1-common-api:19.43.0.392'
+    if(project.findProperty('recipeViewer') == 'emi') runtimeOnly 'dev.emi:emi-neoforge:1.1.24+1.21.1'
+    if(project.findProperty('recipeViewer') == 'jei') runtimeOnly 'mezz.jei:jei-1.21.1-neoforge:19.43.0.392'
+    if(project.hasProperty('withLdlib')) runtimeOnly files('../deps/neoforge-7.0.2-ldlib-neoforge-1.21.1-1.0.35.a.jar')
+    compileOnly files('../deps/advancedae-neoforge-1.6.11.jar')
+    if(project.hasProperty('withRecoveryMods')) {
+        runtimeOnly files('../deps/advancedae-neoforge-1.6.11.jar','../deps/megacells-neoforge-4.11.0.jar','../deps/merequester-neoforge-test.jar')
+        runtimeOnly fileTree('../deps') { include 'recovery-neo-*.jar' }
+    }
+    compileOnly fileTree('../deps') { include 'neoforge-8.0.0-*.jar' }
+    if(project.hasProperty('withGt')) runtimeOnly files('../deps/gtceu-neoforge-8.0.0-36a6b38.jar')
+    if(project.hasProperty('withCreate')) runtimeOnly files('../deps/create-neoforge-6.0.10.jar')
+    if (project.hasProperty('withChem')) runtimeOnly files('../deps/appmek-neoforge-1.6.3.jar')
+    if (project.hasProperty('withMek')) runtimeOnly('mekanism:Mekanism:1.21.1-10.7.19.85') { transitive = false }
+    if (project.hasProperty('withMekStructures')) runtimeOnly('mekanism:Mekanism:1.21.1-10.7.19.85:generators') { transitive = false }
+    if (project.hasProperty('withMekExtras')) runtimeOnly files('../deps/mekextras-neoforge-1.4.1.jar')
+    if (project.hasProperty('withEvolved')) runtimeOnly files("../deps/evolved-neoforge-${project.findProperty('evolvedVersion') ?: '1.3.0-fix2'}.jar",'../deps/igleelib-neoforge-1.2.7.jar')
+    if (project.hasProperty('withAco')) runtimeOnly files("../deps/aco-neoforge-${acoVersion}.jar")
+    testImplementation platform('org.junit:junit-bom:5.10.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
+    testImplementation files("../deps/aco-neoforge-${acoCompileVersion}.jar")
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+tasks.named('jar') {
+    from rootProject.file('assets-reference/LICENSE_ASSETS.txt')
+}
+processResources {
+    inputs.property 'version', project.version
+    inputs.property 'clientPreviewMixin', 'LdlibPreviewLayerMixin'
+    filesMatching('META-INF/neoforge.mods.toml') { expand version: project.version }
+    filesMatching('ae2machines.mixins.json') {
+        filter { line -> line.replace('"injectors": {','"client": ["LdlibPreviewLayerMixin"], "injectors": {') }
+    }
+}
+tasks.matching { it.name == 'runGameTestServer' }.configureEach {
+    def report = file(gameTestPath + '/results.xml')
+    doFirst {
+        rootProject.prepareGameTestWorld(file(gameTestPath))
+        if (report.exists()) report.delete()
+    }
+    doLast {
+        if (!report.isFile()) throw new GradleException('GameTest did not produce a result report')
+        def xml = new groovy.xml.XmlSlurper().parse(report)
+        def cases = xml.depthFirst().findAll { it.name() == 'testcase' }
+        def failures = cases.findAll { !it.failure.isEmpty() || !it.error.isEmpty() || !it.skipped.isEmpty() }
+        def expected = (project.hasProperty('withMek') ? (project.hasProperty('factoryCrash') ? 21 : 33) : 20) + (project.hasProperty('withChem') ? 9 : 0) + (project.hasProperty('withGt') ? 11 : 0) + (project.hasProperty('withGt') && project.hasProperty('withChem') ? 1 : 0) + (project.hasProperty('withGt') && project.hasProperty('withMek') ? 1 : 0)
+        expected+=6
+        if(project.hasProperty('withCreate')) expected+=7
+        if(project.hasProperty('withCreate') && project.hasProperty('withMek')) expected++
+        if(project.hasProperty('withCreate') && project.hasProperty('withMek') && project.hasProperty('withChem')) expected+=2
+        if(project.hasProperty('withCreate') && project.hasProperty('withMek') && project.hasProperty('withGt')) expected+=3
+        if(project.hasProperty('withMekStructures')) expected+=3
+        if(project.hasProperty('withMek') && !project.hasProperty('factoryCrash')) expected++
+        if(project.hasProperty('nativeMoveCrash'))expected=1
+        if(project.hasProperty('nativeMeOnly'))expected=project.findProperty('nativeMeKind')=='mek-coverage'?42:1
+        if(project.hasProperty('acoV2Only'))expected=1
+        if (cases.size() != expected || !failures.isEmpty()) throw new GradleException("GameTests incomplete or failed: ${cases.size()} cases, ${failures.size()} failed")
+    }
+}

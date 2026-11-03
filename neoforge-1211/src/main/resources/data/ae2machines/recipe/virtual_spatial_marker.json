@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    " Q ",
+    " I ",
+    " R "
+  ],
+  "key": {
+    "Q": {
+      "item": "ae2:fluix_crystal"
+    },
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "R": {
+      "item": "minecraft:redstone_torch"
+    }
+  },
+  "result": {
+    "id": "ae2machines:virtual_spatial_marker",
+    "count": 2
+  }
+}

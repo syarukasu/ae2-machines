@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "ae2machines:block/virtual_spatial_marker"
+    }
+  }
+}

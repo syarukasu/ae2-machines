@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "ae2machines:item/virtual_spatial_cell"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "ae2machines:filled": 1
+      },
+      "model": "ae2machines:item/virtual_spatial_cell_filled"
+    }
+  ]
+}

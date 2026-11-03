@@ -1,0 +1,1 @@
+{"type":"minecraft:block","pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"ae2machines:computation_power_port"}],"conditions":[{"condition":"minecraft:survives_explosion"}]}]}

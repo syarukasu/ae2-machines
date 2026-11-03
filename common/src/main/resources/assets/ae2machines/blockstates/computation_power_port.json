@@ -1,0 +1,20 @@
+{
+  "variants": {
+    "facing=north,mode=fe,formed=false": {"model":"ae2machines:block/computation/power_fe_loose"},
+    "facing=east,mode=fe,formed=false": {"model":"ae2machines:block/computation/power_fe_loose","y":90},
+    "facing=south,mode=fe,formed=false": {"model":"ae2machines:block/computation/power_fe_loose","y":180},
+    "facing=west,mode=fe,formed=false": {"model":"ae2machines:block/computation/power_fe_loose","y":270},
+    "facing=north,mode=eu,formed=false": {"model":"ae2machines:block/computation/power_eu_loose"},
+    "facing=east,mode=eu,formed=false": {"model":"ae2machines:block/computation/power_eu_loose","y":90},
+    "facing=south,mode=eu,formed=false": {"model":"ae2machines:block/computation/power_eu_loose","y":180},
+    "facing=west,mode=eu,formed=false": {"model":"ae2machines:block/computation/power_eu_loose","y":270},
+    "facing=north,mode=fe,formed=true": {"model":"ae2machines:block/computation/power_fe_formed"},
+    "facing=east,mode=fe,formed=true": {"model":"ae2machines:block/computation/power_fe_formed","y":90},
+    "facing=south,mode=fe,formed=true": {"model":"ae2machines:block/computation/power_fe_formed","y":180},
+    "facing=west,mode=fe,formed=true": {"model":"ae2machines:block/computation/power_fe_formed","y":270},
+    "facing=north,mode=eu,formed=true": {"model":"ae2machines:block/computation/power_eu_formed"},
+    "facing=east,mode=eu,formed=true": {"model":"ae2machines:block/computation/power_eu_formed","y":90},
+    "facing=south,mode=eu,formed=true": {"model":"ae2machines:block/computation/power_eu_formed","y":180},
+    "facing=west,mode=eu,formed=true": {"model":"ae2machines:block/computation/power_eu_formed","y":270}
+  }
+}

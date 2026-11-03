@@ -1,0 +1,8 @@
+AE2 Machines
+Copyright (c) 2026 syarukasu. All rights reserved.
+
+This notice applies to original AE2 Machines code and original artwork only.
+It does not replace the licenses or notices of third-party materials.
+
+Selected Applied Energistics 2 artwork is distributed under CC BY-NC-SA 3.0.
+Its attribution, original source and license are recorded in LICENSE_ASSETS.txt.

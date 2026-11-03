@@ -1,0 +1,26 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "IPI",
+    "PCP",
+    "ISI"
+  ],
+  "key": {
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "P": {
+      "item": "ae2:engineering_processor"
+    },
+    "C": {
+      "item": "minecraft:chest"
+    },
+    "S": {
+      "item": "ae2:spatial_pylon"
+    }
+  },
+  "result": {
+    "item": "ae2machines:spatial_accelerator",
+    "count": 1
+  }
+}

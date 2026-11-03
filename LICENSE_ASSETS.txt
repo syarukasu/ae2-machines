@@ -1,0 +1,16 @@
+Original models and other artwork authored for the AE2 Machines concept.
+
+The two virtual spatial cell item textures are unmodified spatial_storage_cell_16.png
+and spatial_storage_cell_128.png from Applied Energistics 2 19.2.17 (Minecraft 1.21.1).
+Copyright Applied Energistics 2 contributors; texture artwork credited by AE2 to Ridanisaurus Rid.
+Textures and models are licensed under Creative Commons BY-NC-SA 3.0, not AE2's code license.
+Source: https://github.com/AppliedEnergistics/Applied-Energistics-2
+License: https://creativecommons.org/licenses/by-nc-sa/3.0/
+They are copied under ae2machines names so both supported versions use the requested
+1.21.1 artwork without altering the native AE2 resources.
+
+The virtual spatial IO port also uses the AE2 19.2.17 spatial_io_port and
+spatial_io_port_on models, four front/top state textures and the generic
+back/bottom/side textures. Only resource namespaces are adapted; geometry,
+UVs, transforms and pixels are unchanged. The same AE2 artwork credits and
+CC BY-NC-SA 3.0 license above apply to these imported assets.
