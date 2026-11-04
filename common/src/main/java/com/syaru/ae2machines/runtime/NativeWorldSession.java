@@ -61,6 +61,7 @@ public final class NativeWorldSession implements FactoryHandle {
         batches=new NativeWorldBatches(this,journal);NativeWorldRuntime.get(world).batches(batches);
         if(NativeMachines.mek() && NativeMachines.chemicals()){variable=new MekNativeRequests(this,journal);NativeWorldRuntime.get(world).variable(variable);}
         generic=new NativeParallelRuntime(this,journal);NativeWorldRuntime.get(world).generic(generic);
+        NativeWorldRuntime.get(world).temporal(new NativeTemporalScheduler(this));
         NativeCellLocations.attach(id,this);
     }
     public ServerLevel world(){return world;}

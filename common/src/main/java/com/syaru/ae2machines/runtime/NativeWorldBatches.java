@@ -95,6 +95,7 @@ public final class NativeWorldBatches {
     }
     private void release(Entry e){for(var pos:e.members)occupiedMachines.remove(pos.asLong(),e);occupiedProviders.computeIfPresent(e.target.provider().asLong(),(p,n)->n==1?null:n-1);}
     public boolean active(){return entries.values().stream().anyMatch(Entry::occupies);}
+    public boolean requiresWorldTicks(){return active() || !pendingEnergy.isEmpty();}
     public void invalidate(){indexed=false;targets.clear();if(!active())bindings.clear();}
     public List<ProcessingRuntime> runtimes(){return entries.values().stream().filter(Entry::occupies).map(e->e.runtime).toList();}
     public Optional<Target> target(IPatternDetails pattern) {

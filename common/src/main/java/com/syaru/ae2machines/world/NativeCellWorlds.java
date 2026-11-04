@@ -44,12 +44,14 @@ public final class NativeCellWorlds {
             var level=server.getLevel(key);if(level==null)continue;
             try {
                 NativeWorldRuntime.get(level).release();level.save(null,true,false);NativeCellPlatform.unloaded(server,level);level.close();
+                com.syaru.ae2machines.runtime.NativeGridState.unload(level);
                 if(com.syaru.ae2machines.runtime.NativeMachines.mek())com.syaru.ae2machines.compat.mek.MekNativeNetworks.unload(level);
                 var access=(NativeWorldServerAccess)server;var levels=new LinkedHashMap<>(access.ae2machines$levels());levels.remove(key);access.ae2machines$levels(levels);server.markWorldsDirty();
             }catch(java.io.IOException|RuntimeException error){throw new ExternalHandoffs.PersistenceFailure(error);}
         }
     }
     public static void stopped(MinecraftServer server){
+        com.syaru.ae2machines.runtime.NativeGridState.stopped(server);
         NativeCellLocations.stopped(server);
         RETIRED.remove(server);
         com.syaru.ae2machines.compat.mek.MekIidDraws.stopped(server);

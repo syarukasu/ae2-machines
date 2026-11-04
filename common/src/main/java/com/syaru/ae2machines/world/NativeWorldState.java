@@ -39,6 +39,11 @@ public final class NativeWorldState {
         ticks = next; dayTime = nextDay;
         changed.run();
     }
+    public void advance(int count,boolean daylight){
+        if(count<0)throw new IllegalArgumentException("Negative world interval");
+        long next=Math.addExact(ticks,count),nextDay=daylight?Math.addExact(dayTime,count):dayTime;
+        ticks=next;dayTime=nextDay;changed.run();
+    }
 
     public long ticks() { return ticks; }
     public java.math.BigInteger lanes(){return lanes;}
@@ -67,6 +72,10 @@ public final class NativeWorldState {
     public java.math.BigInteger tickDebt(){return tickDebt;}
     public void addTickDebt(java.math.BigInteger count){if(count.signum()<0)throw new IllegalArgumentException("Negative world work");tickDebt=tickDebt.add(count);changed.run();}
     public void consumeTickDebt(){if(tickDebt.signum()==0)throw new IllegalStateException("World work underflow");tickDebt=tickDebt.subtract(java.math.BigInteger.ONE);changed.run();}
+    public void consumeTickDebt(int count){
+        if(count<0 || tickDebt.compareTo(java.math.BigInteger.valueOf(count))<0)throw new IllegalArgumentException("World work underflow");
+        tickDebt=tickDebt.subtract(java.math.BigInteger.valueOf(count));changed.run();
+    }
     public void setTime(long ticks, long dayTime) {
         if(ticks < 0) throw new IllegalArgumentException("NATIVE_WORLD_INVALID_CLOCK");
         this.ticks=ticks;this.dayTime=dayTime;changed.run();

@@ -52,6 +52,8 @@ minecraft {
             property 'machines.report', file(gameTestPath + '/results.xml').absolutePath
             property 'machines.withAco', project.hasProperty('withAco').toString()
             property 'machines.withMek', project.hasProperty('withMek').toString()
+            property 'ae2machines.disableThermalBatching', project.hasProperty('thermalBaseline').toString()
+            property 'ae2machines.disableCircuitBatching', project.hasProperty('circuitBaseline').toString()
             property 'machines.scaleSamples', (project.findProperty('scaleSamples') ?: '3').toString()
             property 'machines.checkpointBaseline', project.hasProperty('checkpointBaseline').toString()
             property 'machines.admissionBaseline', project.hasProperty('admissionBaseline').toString()
@@ -83,6 +85,7 @@ minecraft {
             property 'machines.nativeMeCrash', project.hasProperty('nativeMeCrash').toString()
             property 'machines.nativeMeLarge', project.hasProperty('nativeMeLarge').toString()
             property 'machines.nativeMeKind', project.findProperty('nativeMeKind') ?: 'crusher'
+            property 'machines.thermalSpeed', project.findProperty('thermalSpeed') ?: '256'
             property 'machines.withMekStructures', project.hasProperty('withMekStructures').toString()
             property 'machines.evolvedLegacy', (project.findProperty('evolvedVersion') ?: '').toString().startsWith('1.2.1').toString()
             property 'machines.gtWideCrash', project.hasProperty('gtWideCrash').toString()

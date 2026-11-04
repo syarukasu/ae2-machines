@@ -24,6 +24,28 @@ public final class NativeWorldRuntime {
     private Lease active;
     private java.math.BigInteger speed=java.math.BigInteger.ONE;
     private boolean stepping;
+    private NativeTemporalScheduler temporal;
+    private long topologyRevision;
+    private NativeThermalBatch thermalBatch;
+    private long thermalSkipped;
+    private long circuitChunkEpoch,circuitChunkChecks;
+    public void circuitChunkChanged(){circuitChunkEpoch++;}
+    long circuitChunkEpoch(){return circuitChunkEpoch;}
+    public long circuitChunkChecks(){return circuitChunkChecks;}
+    void circuitChunkChecks(long count){circuitChunkChecks+=count;}
+    public Iterable<net.minecraft.server.level.ChunkHolder> circuitChunks(Iterable<net.minecraft.server.level.ChunkHolder> original){return thermalBatch==null || !NativeCircuitOptions.ENABLED?original:thermalBatch.chunks(original);}
+    private String thermalBoundary="NOT_RUN";
+    public String thermalBoundary(){return thermalBoundary;}
+    void thermalBoundary(String value){thermalBoundary=value;}
+    public long thermalSkipped(){return thermalSkipped;}
+    void thermalSkipped(long count){thermalSkipped+=count;}
+    public java.util.List<net.minecraft.world.level.block.entity.TickingBlockEntity> thermalTickers(java.util.List<net.minecraft.world.level.block.entity.TickingBlockEntity> original){return thermalBatch==null?original:thermalBatch.tickers(original);}
+    public void thermalTickEnd(){if(thermalBatch!=null)thermalBatch.tickEnd();}
+    public long topologyRevision(){return topologyRevision;}
+    public void temporal(NativeTemporalScheduler value){checkThread();temporal=value;}
+    public void invalidateTemporal(){topologyRevision++;if(temporal!=null)temporal.invalidate();}
+    void observeFurnace(NativeFurnaceTime.Frame frame){if(temporal!=null)temporal.observeFurnace(frame);}
+    public NativeTemporalScheduler.Statistics temporalStatistics(){return temporal==null?new NativeTemporalScheduler.Statistics(0,0,"NO_SESSION"):temporal.statistics();}
     private com.syaru.ae2machines.block.BaseAccelerator energyHost;
     private Runnable beforeExternalPower=()->{};
     private com.syaru.ae2machines.runtime.NativeWorldBatches batches;
@@ -75,14 +97,23 @@ public final class NativeWorldRuntime {
             state.addTickDebt(speed.subtract(java.math.BigInteger.ONE));
             int work=state.tickDebt().min(EXTRA_TICK_WINDOW).intValueExact();
             stepping=true;
+            boolean retryThermal=true;
             for(int i=0;i<work && running();i++) {
+                if(retryThermal && thermalBatch==null && work-i>=2 && energyHost!=null && energyHost.factoryHandle() instanceof com.syaru.ae2machines.runtime.NativeWorldSession session
+                        && com.syaru.ae2machines.runtime.NativeMachines.mek()){
+                    thermalBatch=NativeThermalBatch.open(level,session,work-i);
+                    retryThermal=thermalBatch!=null || thermalBoundary.equals("AE2_EVENT") || thermalBoundary.equals("AE2_CALLABLE");
+                }
+                int skipped=temporal==null?0:temporal.advance(work-i);
+                if(skipped>0){i+=skipped-1;continue;}
                 com.syaru.ae2machines.platform.NativeCellPlatform.beforeTick(level,time);
                 level.tick(time);
                 com.syaru.ae2machines.platform.NativeCellPlatform.afterTick(level,time);
                 state.consumeTickDebt();
+                if(thermalBatch!=null && thermalBatch.finished()){thermalBatch.close();thermalBatch=null;}
             }
         } finally {
-            if(outer){stepping=false;if(owned!=null)owned.endTickBundle();}
+            if(outer){try{if(thermalBatch!=null)thermalBatch.close();}finally{thermalBatch=null;stepping=false;if(owned!=null)owned.endTickBundle();}}
         }
     }
     private boolean executionReady(){

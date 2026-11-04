@@ -35,6 +35,7 @@ public final class MekNativeRequests {
     }
     public boolean busy(BlockPos pos){return entries.values().stream().anyMatch(e->e.pos.equals(pos) && e.occupies());}
     public boolean active(){return entries.values().stream().anyMatch(Entry::occupies);}
+    public boolean requiresWorldTicks(){return active() || entries.values().stream().anyMatch(e->e.state!=State.QUARANTINED && e.credit.signum()>0);}
     public boolean hasId(UUID id){return entries.containsKey(id) || forgotten.containsKey(id);}
     public boolean owns(UUID id,String digest){var e=entries.get(id);return e!=null && e.digest.equals(digest);}
     public boolean callerOwns(UUID id,String digest){var e=entries.get(id);return e!=null && e.route==Route.CALLER && e.digest.equals(digest);}
@@ -192,6 +193,7 @@ public final class MekNativeRequests {
         return offered.subtract(left);
     }
     public void tick(){
+        if(com.syaru.ae2machines.world.NativeCircuitOptions.ENABLED && entries.isEmpty())return;
         if(!session.isOnline())return;
         if(recipeRevision!=FactoryRecipes.revision()){
             for(var e:entries.values())if(e.state==State.RUNNING && !e.work.recipesUnchanged()){e.state=State.QUARANTINED;save();}

@@ -41,6 +41,8 @@ neoForge {
             systemProperty 'machines.report', file(gameTestPath + '/results.xml').absolutePath
             systemProperty 'machines.withAco', project.hasProperty('withAco').toString()
             systemProperty 'machines.withMek', project.hasProperty('withMek').toString()
+            systemProperty 'ae2machines.disableThermalBatching', project.hasProperty('thermalBaseline').toString()
+            systemProperty 'ae2machines.disableCircuitBatching', project.hasProperty('circuitBaseline').toString()
             systemProperty 'machines.scaleSamples', (project.findProperty('scaleSamples') ?: '3').toString()
             systemProperty 'machines.checkpointBaseline', project.hasProperty('checkpointBaseline').toString()
             systemProperty 'machines.admissionBaseline', project.hasProperty('admissionBaseline').toString()
@@ -72,6 +74,7 @@ neoForge {
             systemProperty 'machines.nativeMeCrash', project.hasProperty('nativeMeCrash').toString()
             systemProperty 'machines.nativeMeLarge', project.hasProperty('nativeMeLarge').toString()
             systemProperty 'machines.nativeMeKind', project.findProperty('nativeMeKind') ?: 'crusher'
+            systemProperty 'machines.thermalSpeed', project.findProperty('thermalSpeed') ?: '256'
             systemProperty 'machines.withMekStructures', project.hasProperty('withMekStructures').toString()
             systemProperty 'machines.evolvedLegacy', (project.findProperty('evolvedVersion') ?: '').toString().startsWith('1.2.1').toString()
             systemProperty 'machines.gtWideCrash', project.hasProperty('gtWideCrash').toString()

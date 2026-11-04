@@ -28,6 +28,8 @@ public final class NativeParallelRuntime {
     private final FactoryJournal journal;
     private final Map<BlockPos,Pool> pools=new LinkedHashMap<>();
     private boolean loading=true,quarantined;
+    private long candidatesRevision=Long.MIN_VALUE;
+    private List<BlockEntity> candidates=List.of();
     public NativeParallelRuntime(NativeWorldSession session,FactoryJournal journal){
         this.session=session;this.journal=journal;
         var saved=journal.read().getCompound("genericNativeParallel");
@@ -74,12 +76,17 @@ public final class NativeParallelRuntime {
     public BigInteger extractEnergy(BlockPos pos,BigInteger amount,boolean simulate){return energy(Objects.requireNonNull(pools.get(pos)),amount,simulate,true);}
     public BigInteger insertEnergy(BlockPos pos,Direction side,BigInteger amount,boolean simulate){var p=Objects.requireNonNull(pools.get(pos));return side!=null && !p.contract.energyInput(side)?BigInteger.ZERO:energy(p,amount,simulate,false,side);}
     public BigInteger extractEnergy(BlockPos pos,Direction side,BigInteger amount,boolean simulate){var p=Objects.requireNonNull(pools.get(pos));return side!=null && !p.contract.energyOutput(side)?BigInteger.ZERO:energy(p,amount,simulate,true,side);}
-    public boolean hasTargets(){return session.nativeBlocks().stream().anyMatch(NativeParallelMachine.class::isInstance);}
-    public boolean needsInitialization(){return session.nativeBlocks().stream().anyMatch(be->be instanceof NativeParallelMachine && !pools.containsKey(be.getBlockPos()));}
+    private List<BlockEntity> candidates(){
+        long revision=NativeWorldRuntime.get(session.world()).topologyRevision();
+        if(candidatesRevision!=revision){candidates=session.nativeBlocks().stream().filter(NativeParallelMachine.class::isInstance).toList();candidatesRevision=revision;}
+        return candidates;
+    }
+    public boolean hasTargets(){return NativeThermalOptions.ENABLED?!candidates().isEmpty():session.nativeBlocks().stream().anyMatch(NativeParallelMachine.class::isInstance);}
+    public boolean needsInitialization(){return NativeThermalOptions.ENABLED?candidates().stream().anyMatch(be->!pools.containsKey(be.getBlockPos())):session.nativeBlocks().stream().anyMatch(be->be instanceof NativeParallelMachine && !pools.containsKey(be.getBlockPos()));}
     public boolean canConfigure(BigInteger count){
         if(count.signum()<1 || quarantined)return false;
         try{
-            for(var be:session.nativeBlocks())if(be instanceof NativeParallelMachine){
+            for(var be:candidates()){
                 var p=pools.get(be.getBlockPos());if(p==null)p=new Pool(be);
                 require(count.equals(BigInteger.ONE) || p.contract.independentCopies(be),"NATIVE_PARALLEL_GROUP_CONTRACT_REQUIRED");
                 if(count.compareTo(p.count())>0)p.empty();
@@ -92,7 +99,7 @@ public final class NativeParallelRuntime {
     public void configure(BigInteger count){
         require(canConfigure(count),"NATIVE_PARALLEL_CONFIGURATION_UNSUPPORTED");
         mutate(()->{
-            for(var be:session.nativeBlocks())if(be instanceof NativeParallelMachine){
+            for(var be:candidates()){
                 var p=pools.computeIfAbsent(be.getBlockPos(),ignored->new Pool(be));var before=p.assets();
                 var difference=count.subtract(p.count());
                 if(difference.signum()>0)p.groups.add(new Group(p.empty(),difference));

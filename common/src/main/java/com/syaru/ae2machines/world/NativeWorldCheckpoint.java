@@ -95,6 +95,7 @@ public final class NativeWorldCheckpoint {
         if(!RecoveryParticipants.linksCovered(result))return Set.of();
         if(!world.getEntitiesOfClass(net.minecraft.world.entity.Entity.class,NativeRegionMove.box(min,max)).isEmpty())return Set.of();
         var nativeBlocks=NativeRegionMove.blockEntities(world,min,max);
+        var thermalParticipants=Collections.newSetFromMap(new IdentityHashMap<Object,Boolean>());
         var structureParts=new HashSet<BlockPos>();
         if(NativeMachines.gt())for(var machine:nativeBlocks)
             if(com.syaru.ae2machines.platform.GtMultiblockAdapter.supports(machine)
@@ -103,6 +104,7 @@ public final class NativeWorldCheckpoint {
         for(var be:nativeBlocks) {
             if(structureParts.contains(be.getBlockPos()))continue;
             if(be instanceof com.syaru.ae2machines.block.BaseEnergyPort)continue;
+            if(NativeMachines.mek() && com.syaru.ae2machines.compat.mek.MekThermalRecovery.participant(be,world,min,max,thermalParticipants))continue;
             if(be instanceof com.syaru.ae2machines.api.NativeParallelMachine declared){
                 var contract=declared.nativeParallelContract();
                 if(contract==null || !contract.localStateOnly() || contract.id()==null || contract.id().isBlank() || contract.revision()<1)return Set.of();

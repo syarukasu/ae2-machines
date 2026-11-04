@@ -1,28 +1,29 @@
-# AE2 Machines 0.1.0 Alpha
+# AE2 Machines 0.1.1 Alpha
 
-Minecraft **1.20.1 Forge** / **1.21.1 NeoForge**。対応するファイルを1つだけ導入してください。
-
-AE2の工場を空間セルに格納し、横増設式の演算器で元の機械を加速・並列化する初期Alpha版です。
+Minecraft **1.20.1 Forge** / **1.21.1 NeoForge**。対応する本体JARを1つだけ、クライアント・サーバー双方へ導入してください。
 AE2は必須、ACOは任意連携です。
 
-- 仮想化空間標識・セル・仮想P2P・内外の電力ポート・空間演算器とT1～T9の演算ユニット。
-- セルベイの空手右クリック取り出し、格納寸法表示、コントローラーからの操作。
-- LDLibの工場・構造プレビューとカメラ移動、JEI/EMI・ME Accessの任意連携。
-- 現実への復元では、対応Mekanismコンテナの通常容量分を設備へ戻し、余剰をセルに保持。空いた元設備へ後から補充できます。
-- 復元・回収中の保存台帳、配管の保存用分配量、未反映の熱の取り扱いを修正。
+## 変更点
+
+- 並列T1～T9を **16 / 64 / 256 / 1,024 / 4,096 / 8,192 / 16,384 / 32,768 / 65,536** に変更。
+- 加速T1～T9を **1 / 2 / 4 / 8 / 16 / 32 / 64 / 128 / 256倍** に変更。T1は等速です。
+- T9同士の理論最大は **16,777,216倍**。素材・電力・元設備の条件を無視して達成する値ではありません。
+- 加速中の構造走査とチャンク候補走査を再利用し、変化しない構成部品の更新を原子炉・ボイラー・搬送網単位へ集約。
+- AE2のイベント、配管の設定変更、構造変更時は必要な本家処理へ戻します。加工・発電・熱・実搬送は本家処理を維持します。
+- Evolvedの保存・アップグレード用Mixinを過剰に拒否していた集約判定を修正。確認したクラスのSHA-256が一致する場合だけ限定して扱い、未知の処理を一括で許可しません。
+- 既存の公開APIと保存形式は維持します。
+
+## 更新時
+
+旧512倍など、新上限を超える設定は勝手に切り詰めません。停止した場合はGUIで256倍以下へ変更してください。保存済みの素材・電力を倍率変更で消す処理は追加していません。
+
+## 確認範囲と注意
+
+両版の実セル内で、Extras・Evolved併用時の等速/256倍を比較し、有限燃料・電力・ナトリウム循環・水・蒸気・凝縮・熱の履歴を本家経路と照合しています。強制終了後の再開と、古くなった保存を再開しないことも確認しています。
+
+**新T9上限（65,536並列×256倍速）での実加工完走試験と、実際のクライアントでのテストプレイはこれからです。**
+単体と同じ負荷、全構成での20TPS、任意の外部ME/CPU/倉庫/電源を含む全体復旧を保証する版ではありません。
+内部AE2 CPUとInduction Matrix専用の加速・並列化は対象外です。
 
 **Alpha版です。既存ワールドはバックアップし、新規ワールドでの確認から始めてください。**
-構成部品・ティアのサバイバルレシピは未整備のため、現段階ではクリエイティブタブから部品を入手して構築してください。
-全機種の無条件な集約並列、任意の外部設備をまたぐ復旧、すべての構成での同一負荷を保証する版ではありません。
-内部AE2 CPUとInduction Matrix専用の加速・並列化は対象外です。未完了の加工・未受領の出力・未知の保存形式では、安全側で復元を拒否する場合があります。
-
-## English
-
-Initial experimental Alpha for **Minecraft 1.20.1 Forge** and **1.21.1 NeoForge**. Install only the matching download, on both the client and server. Applied Energistics 2 is required; ACO integration is optional.
-
-Includes spatial factory capture, a modular computer with tiered acceleration/parallel units, virtual ME/power endpoints, optional previews and integrations, empty-hand cell-bay ejection and stored-size tooltips.
-
-Supported Mekanism containers physically restore to native capacity; excess assets remain in a server-owned cell ledger for later refill into the original equipment. Material, electrical and thermal accounting stay separate. Native pipe save shares and deferred-heat persistence are handled during restoration and recovery.
-
-**Back up existing worlds and start in a new world.** Compatibility, aggregate parallel processing and recovery have explicit boundaries. This Alpha does not promise universal machine support, identical workload for every setup or crash recovery across arbitrary external equipment. Internal AE2 crafting CPUs and dedicated Induction Matrix acceleration are excluded.
-Survival recipes for modular parts and tiers are incomplete; this Alpha targets construction using the creative tab.
+サバイバルレシピは未整備のため、構成部品はクリエイティブタブから入手してください。

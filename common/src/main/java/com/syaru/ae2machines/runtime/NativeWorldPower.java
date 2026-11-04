@@ -30,6 +30,8 @@ public final class NativeWorldPower {
     private final BlockPos min,max;
     private final boolean internalRouting;
     private final List<BlockPos> endpoints;
+    private long blocksRevision=Long.MIN_VALUE;
+    private List<BlockEntity> blockSnapshot=List.of();
     public NativeWorldPower(ServerLevel world,BlockPos min,BlockPos max) {
         this(world,min,max,false,List.of());
     }
@@ -37,6 +39,8 @@ public final class NativeWorldPower {
         this.world=world;this.min=min;this.max=max;this.internalRouting=internalRouting;this.endpoints=List.copyOf(endpoints);
     }
     public List<BlockEntity> blocks() {
+        long revision=NativeWorldRuntime.get(world).topologyRevision();
+        if(NativeThermalOptions.ENABLED && blocksRevision==revision)return blockSnapshot;
         var result=new ArrayList<BlockEntity>();
         for(int x=min.getX()>>4;x<=max.getX()>>4;x++)for(int z=min.getZ()>>4;z<=max.getZ()>>4;z++) {
             var chunk=world.getChunkSource().getChunkNow(x,z);
@@ -48,7 +52,8 @@ public final class NativeWorldPower {
             }
         }
         result.sort(Comparator.comparingLong(be->be.getBlockPos().asLong()));
-        return result;
+        if(!NativeThermalOptions.ENABLED)return result;
+        blockSnapshot=List.copyOf(result);blocksRevision=revision;return blockSnapshot;
     }
     public int receiveFE(int offered,long tick,boolean simulate) {
         return transferFE(offered,tick,simulate,false);
