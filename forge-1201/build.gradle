@@ -85,6 +85,7 @@ minecraft {
             property 'machines.nativeMeCrash', project.hasProperty('nativeMeCrash').toString()
             property 'machines.nativeMeLarge', project.hasProperty('nativeMeLarge').toString()
             property 'machines.nativeMeKind', project.findProperty('nativeMeKind') ?: 'crusher'
+            property 'machines.nativeTimeBaseline', project.hasProperty('nativeTimeBaseline').toString()
             property 'machines.thermalSpeed', project.findProperty('thermalSpeed') ?: '256'
             property 'machines.withMekStructures', project.hasProperty('withMekStructures').toString()
             property 'machines.evolvedLegacy', (project.findProperty('evolvedVersion') ?: '').toString().startsWith('1.2.1').toString()

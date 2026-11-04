@@ -43,9 +43,11 @@ public final class DemandWork<K> {
         if (!simulate) {
             advance(now);
             if (accepted.signum() > 0) {
+                var credit = remainder().add(accepted);
                 supplied = supplied.add(accepted);
-                // Re-evaluate only this tick's phase groups, never the recipe graph or individual Q lanes.
-                job.copyProgress(calculate());
+                // Sub-work-unit payments retain credit, but cannot change any native phase yet.
+                if (credit.compareTo(start.recipe().energyPerWork()) >= 0)
+                    job.copyProgress(calculate());
             }
         }
         return accepted;
@@ -58,11 +60,30 @@ public final class DemandWork<K> {
     }
 
     private static BigInteger maximumEnergy(BatchJob.Checkpoint<?> start) {
-        var trial = BatchJob.restore(start);
-        var remaining = start.total().multiply(start.recipe().duration()).multiply(start.recipe().energyPerWork())
-                .subtract(start.energyUsed());
-        trial.tick(payment(start, remaining));
-        return trial.energyUsed().subtract(start.energyUsed());
+        if (start.state() != BatchJob.State.RUNNING || start.recipe().energyPerWork().signum() == 0)
+            return BigInteger.ZERO;
+        var groups = new java.util.TreeMap<>(start.phases());
+        var occupied = groups.values().stream().reduce(BigInteger.ZERO, BigInteger::add);
+        var queued = start.total().subtract(start.completed()).subtract(occupied);
+        var starting = start.lanes().subtract(occupied).min(queued);
+        if (starting.signum() > 0) groups.merge(BigInteger.ZERO, starting, BigInteger::add);
+        queued = queued.subtract(starting);
+        var duration = start.recipe().duration();
+        var work = BigInteger.ZERO;
+        for (var group : groups.descendingMap().entrySet()) {
+            var first = duration.subtract(group.getKey()).min(start.speed());
+            work = work.add(first.multiply(group.getValue()));
+            if (!first.equals(duration.subtract(group.getKey()))) continue;
+            // Finished lanes reuse the remaining time; sub-tick cycles do not require trial jobs.
+            var cycles = start.speed().subtract(first).divideAndRemainder(duration);
+            var complete = queued.min(cycles[0].multiply(group.getValue()));
+            work = work.add(complete.multiply(duration));
+            queued = queued.subtract(complete);
+            var partial = queued.min(group.getValue());
+            work = work.add(partial.multiply(cycles[1]));
+            queued = queued.subtract(partial);
+        }
+        return work.multiply(start.recipe().energyPerWork());
     }
 
     private static MeteredEnergy payment(BatchJob.Checkpoint<?> job, BigInteger amount) {

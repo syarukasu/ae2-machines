@@ -23,10 +23,6 @@ final class NativeThermalBatch implements AutoCloseable {
     private final int limit;
     private int completed;
     private boolean closed;
-    private Iterable<net.minecraft.server.level.ChunkHolder> chunkSource;
-    private List<net.minecraft.server.level.ChunkHolder> chunkIndex;
-    private long chunkEpoch=Long.MIN_VALUE;
-    private int chunkCandidates;
     private NativeThermalBatch(ServerLevel world,List<TickingBlockEntity> source,List<TickingBlockEntity> active,List<MekThermalShells.Shell> shells,int limit){
         this.world=world;this.source=source;this.active=active;this.shells=shells;this.limit=limit;sourceSize=source.size();revision=NativeWorldRuntime.get(world).topologyRevision();
         conditional=active.stream().filter(NativeConditionalTicker.class::isInstance).map(NativeConditionalTicker.class::cast).toList();
@@ -70,24 +66,6 @@ final class NativeThermalBatch implements AutoCloseable {
         var calls=(com.syaru.ae2machines.mixin.NativeTemporalCallsAccess)appeng.hooks.ticking.TickHandler.instance();
         var queue=calls.machines$timeCalls().get(world);
         return queue!=null && !queue.isEmpty() || calls.machines$timeCalculations().containsKey(world);
-    }
-    Iterable<net.minecraft.server.level.ChunkHolder> chunks(Iterable<net.minecraft.server.level.ChunkHolder> original){
-        var runtime=NativeWorldRuntime.get(world);
-        if(closed || runtime.topologyRevision()!=revision)return original;
-        long epoch=runtime.circuitChunkEpoch();
-        if(original!=chunkSource || epoch!=chunkEpoch){
-            chunkSource=original;chunkEpoch=epoch;chunkIndex=null;chunkCandidates=0;
-            var found=new ArrayList<net.minecraft.server.level.ChunkHolder>();boolean ready=true;
-            for(var holder:original){
-                chunkCandidates++;
-                if(holder.getTickingChunk()!=null)found.add(holder);
-                else if(net.minecraft.server.level.ChunkLevel.isBlockTicking(holder.getTicketLevel()))ready=false;
-            }
-            // Include the native ticking halo too. Pending ticking futures retain the native scan.
-            if(ready)chunkIndex=List.copyOf(found);
-        }
-        if(chunkIndex==null)return original;
-        runtime.circuitChunkChecks(chunkCandidates-chunkIndex.size());return chunkIndex;
     }
     static NativeThermalBatch open(ServerLevel world,NativeWorldSession session,int count){
         if(!NativeThermalOptions.ENABLED || count<2 || session.generic().hasTargets() || session.batches().requiresWorldTicks()

@@ -74,6 +74,7 @@ neoForge {
             systemProperty 'machines.nativeMeCrash', project.hasProperty('nativeMeCrash').toString()
             systemProperty 'machines.nativeMeLarge', project.hasProperty('nativeMeLarge').toString()
             systemProperty 'machines.nativeMeKind', project.findProperty('nativeMeKind') ?: 'crusher'
+            systemProperty 'machines.nativeTimeBaseline', project.hasProperty('nativeTimeBaseline').toString()
             systemProperty 'machines.thermalSpeed', project.findProperty('thermalSpeed') ?: '256'
             systemProperty 'machines.withMekStructures', project.hasProperty('withMekStructures').toString()
             systemProperty 'machines.evolvedLegacy', (project.findProperty('evolvedVersion') ?: '').toString().startsWith('1.2.1').toString()

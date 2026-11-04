@@ -25,15 +25,20 @@ public final class NativeWorldRuntime {
     private java.math.BigInteger speed=java.math.BigInteger.ONE;
     private boolean stepping;
     private NativeTemporalScheduler temporal;
+    private final java.util.Map<net.minecraft.core.BlockPos,NativeFurnaceTime.Frame> furnaceFrames=new java.util.HashMap<>();
     private long topologyRevision;
     private NativeThermalBatch thermalBatch;
     private long thermalSkipped;
     private long circuitChunkEpoch,circuitChunkChecks;
+    private final NativeChunkSchedule chunkSchedule=new NativeChunkSchedule();
     public void circuitChunkChanged(){circuitChunkEpoch++;}
     long circuitChunkEpoch(){return circuitChunkEpoch;}
+    int hostTick(){return level.getServer().getTickCount();}
     public long circuitChunkChecks(){return circuitChunkChecks;}
     void circuitChunkChecks(long count){circuitChunkChecks+=count;}
-    public Iterable<net.minecraft.server.level.ChunkHolder> circuitChunks(Iterable<net.minecraft.server.level.ChunkHolder> original){return thermalBatch==null || !NativeCircuitOptions.ENABLED?original:thermalBatch.chunks(original);}
+    public Iterable<net.minecraft.server.level.ChunkHolder> circuitChunks(Iterable<net.minecraft.server.level.ChunkHolder> original){
+        return !NativeCircuitOptions.ENABLED || !running() || !NativeCellWorlds.owns(level)?original:chunkSchedule.select(this,original);
+    }
     private String thermalBoundary="NOT_RUN";
     public String thermalBoundary(){return thermalBoundary;}
     void thermalBoundary(String value){thermalBoundary=value;}
@@ -44,7 +49,8 @@ public final class NativeWorldRuntime {
     public long topologyRevision(){return topologyRevision;}
     public void temporal(NativeTemporalScheduler value){checkThread();temporal=value;}
     public void invalidateTemporal(){topologyRevision++;if(temporal!=null)temporal.invalidate();}
-    void observeFurnace(NativeFurnaceTime.Frame frame){if(temporal!=null)temporal.observeFurnace(frame);}
+    void observeFurnace(NativeFurnaceTime.Frame frame){furnaceFrames.put(frame.owner().getBlockPos(),frame);}
+    NativeFurnaceTime.Frame furnaceFrame(net.minecraft.core.BlockPos pos){return furnaceFrames.get(pos);}
     public NativeTemporalScheduler.Statistics temporalStatistics(){return temporal==null?new NativeTemporalScheduler.Statistics(0,0,"NO_SESSION"):temporal.statistics();}
     private com.syaru.ae2machines.block.BaseAccelerator energyHost;
     private Runnable beforeExternalPower=()->{};
@@ -106,6 +112,7 @@ public final class NativeWorldRuntime {
                 }
                 int skipped=temporal==null?0:temporal.advance(work-i);
                 if(skipped>0){i+=skipped-1;continue;}
+                if(!running())break;
                 com.syaru.ae2machines.platform.NativeCellPlatform.beforeTick(level,time);
                 level.tick(time);
                 com.syaru.ae2machines.platform.NativeCellPlatform.afterTick(level,time);

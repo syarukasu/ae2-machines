@@ -16,3 +16,19 @@ tasks.register('benchmark', JavaExec) {
             '-rf', 'json', '-rff', layout.buildDirectory.file('reports/benchmark.json').get().asFile.absolutePath
     doFirst { layout.buildDirectory.dir('reports').get().asFile.mkdirs() }
 }
+
+tasks.register('demandBenchmark', JavaExec) {
+    dependsOn benchmarkClasses
+    classpath = sourceSets.benchmark.runtimeClasspath
+    if (project.hasProperty('demandBenchmarkBaseline')) {
+        def baseline = rootProject.file('build/publication/0.1.1/ae2-machines-forge-1.20.1-0.1.1.jar')
+        if (!baseline.isFile()) throw new GradleException('Published 0.1.1 baseline is required')
+        classpath = files(baseline) + classpath
+    }
+    mainClass = 'org.openjdk.jmh.Main'
+    def label = providers.gradleProperty('demandBenchmarkLabel').getOrElse('candidate')
+    args '.*DemandWorkBenchmark.*', '-wi', '2', '-i', '3', '-w', '1s', '-r', '1s', '-f', '2',
+            '-jvmArgs', '-Xms128m -Xmx256m', '-prof', 'gc', '-rf', 'json', '-rff',
+            layout.buildDirectory.file("reports/demand-${label}.json").get().asFile.absolutePath
+    doFirst { layout.buildDirectory.dir('reports').get().asFile.mkdirs() }
+}

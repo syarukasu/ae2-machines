@@ -5,6 +5,7 @@ import appeng.api.networking.security.IActionSource;
 import appeng.api.stacks.*;
 import appeng.api.storage.MEStorage;
 import com.syaru.ae2machines.api.NativeParallelMachine;
+import com.syaru.ae2machines.api.NativeTimeMachine;
 import com.syaru.ae2machines.api.NativeParallelMachine.*;
 import com.syaru.ae2machines.platform.PlatformData;
 import com.syaru.ae2machines.world.*;
@@ -19,6 +20,7 @@ import static com.syaru.ae2machines.world.NativeFactoryCompiler.require;
 
 /** Identical native states share a representative and an exact multiplicity. */
 public final class NativeParallelRuntime {
+    private static final boolean TIME_BATCH=!Boolean.getBoolean("machines.nativeTimeBaseline");
     public record Snapshot(int lanes,BigInteger nativeTicks,BigInteger worldTicks,BigInteger energyReceived,
             BigInteger energyExtracted,BigInteger consumed,BigInteger generated,Assets assets,boolean quarantined){}
     public record ExactSnapshot(BigInteger lanes,BigInteger nativeTicks,BigInteger worldTicks,BigInteger energyReceived,
@@ -71,6 +73,37 @@ public final class NativeParallelRuntime {
     public ExactSnapshot exactSnapshot(BlockPos pos){var p=Objects.requireNonNull(pools.get(pos));return new ExactSnapshot(p.count(),p.nativeTicks,p.worldTicks,p.received,p.extracted,p.consumed,p.generated,p.assets(),quarantined);}
     public Grouping grouping(BlockPos pos){var p=Objects.requireNonNull(pools.get(pos));return new Grouping(p.count(),p.groups.size(),p.nativeCalls);}
     public boolean quarantined(){return quarantined;}
+    /** Plan once per distinct native state, never per logical Q copy or elapsed S tick. */
+    public NativeQuietStep planTime(BlockEntity source,int offered){
+        if(!TIME_BATCH)return null;
+        var pool=pools.get(source.getBlockPos());
+        if(pool==null || pool.source!=source || quarantined || !intact() || offered<2)return null;
+        return inspect(()->{
+            var before=pool.save();var steps=new ArrayList<NativeTimeMachine.Step>();int limit=offered;
+            for(var group:pool.groups){
+                if(!(group.lane() instanceof NativeTimeMachine machine))return null;
+                var step=NativeParallelContext.call(group.lane(),()->machine.nativeTimeStep(offered));
+                if(step==null)return null;
+                require(step.limit()<=offered,"NATIVE_TIME_INTERVAL_EXCEEDS_OFFER");
+                limit=Math.min(limit,step.limit());steps.add(step);
+            }
+            int accepted=limit;
+            return new NativeQuietStep(accepted,n->{
+                require(n>0 && n<=accepted,"INVALID_NATIVE_TIME_ADVANCE");
+                mutate(()->{
+                    require(before.equals(pool.save()),"NATIVE_TIME_PLAN_STATE_CHANGED");
+                    require(pool.count().equals(BigInteger.ONE) || pool.contract.independentCopies(source),"NATIVE_PARALLEL_GROUP_CONTRACT_REQUIRED");
+                    for(int i=0;i<pool.groups.size();i++){
+                        var group=pool.groups.get(i);var data=nativeData(group.lane());var assets=pool.audit(group.lane());
+                        var step=steps.get(i);
+                        NativeParallelContext.call(group.lane(),()->{step.advance().accept(n);return null;});
+                        pool.recordWork(group,data,assets,BigInteger.valueOf(n));
+                    }
+                    pool.publishPrimaryState();pool.worldTicks=pool.worldTicks.add(BigInteger.valueOf(n));return null;
+                });
+            },()->{pool.load(before);pool.publishPrimaryState();save();});
+        });
+    }
     public boolean intact(){return pools.values().stream().allMatch(p->!p.source.isRemoved() && session.world().getBlockEntity(p.source.getBlockPos())==p.source);}
     public BigInteger insertEnergy(BlockPos pos,BigInteger amount,boolean simulate){return energy(Objects.requireNonNull(pools.get(pos)),amount,simulate,false);}
     public BigInteger extractEnergy(BlockPos pos,BigInteger amount,boolean simulate){return energy(Objects.requireNonNull(pools.get(pos)),amount,simulate,true);}
@@ -218,12 +251,16 @@ public final class NativeParallelRuntime {
                     require(ticker!=null,"NATIVE_PARALLEL_NATIVE_TICKER_MISSING");
                     ((BlockEntityTicker)ticker).tick(lane.getLevel(),lane.getBlockPos(),lane.getBlockState(),lane);
                 }
-                var after=nativeData(lane);var b=audit(lane);var work=contract.energyWork(before,a,after,b);
-                require(a.energy().subtract(work.consumed()).add(work.generated()).equals(b.energy()),"NATIVE_PARALLEL_ENERGY_IMBALANCE");
-                consumed=consumed.add(work.consumed().multiply(g.copies()));generated=generated.add(work.generated().multiply(g.copies()));nativeTicks=nativeTicks.add(g.copies());nativeCalls=nativeCalls.add(BigInteger.ONE);
+                recordWork(g,before,a,BigInteger.ONE);
             }
             publishPrimaryState();
             worldTicks=worldTicks.add(BigInteger.ONE);
+        }
+        void recordWork(Group group,CompoundTag before,Assets a,BigInteger ticks){
+            var after=nativeData(group.lane());var b=audit(group.lane());var work=contract.energyWork(before,a,after,b);
+            require(a.energy().subtract(work.consumed()).add(work.generated()).equals(b.energy()),"NATIVE_PARALLEL_ENERGY_IMBALANCE");
+            consumed=consumed.add(work.consumed().multiply(group.copies()));generated=generated.add(work.generated().multiply(group.copies()));
+            nativeTicks=nativeTicks.add(group.copies().multiply(ticks));nativeCalls=nativeCalls.add(BigInteger.ONE);
         }
         void markPrimaryDirty(){session.world().getChunkAt(source.getBlockPos()).setUnsaved(true);}
         void publishPrimaryState(){if(session.world().getBlockState(source.getBlockPos())!=source.getBlockState())session.world().setBlock(source.getBlockPos(),source.getBlockState(),2);markPrimaryDirty();}

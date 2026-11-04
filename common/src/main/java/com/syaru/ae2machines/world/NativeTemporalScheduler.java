@@ -10,7 +10,6 @@ import net.minecraft.world.level.block.entity.*;
 
 /** Advances only intervals whose entire owned world has no observable event. Unknowns stay native. */
 public final class NativeTemporalScheduler {
-    private static final Set<Block> STATIC_BLOCKS=Set.of(Blocks.STONE,Blocks.GLASS,Blocks.IRON_BLOCK,Blocks.SMOOTH_STONE,Blocks.BARRIER);
     private static final Set<String> PARTS=Set.of("appeng.parts.p2p.MEP2PTunnelPart","com.syaru.ae2machines.platform.VirtualP2PPart",
         "appeng.parts.networking.QuartzFiberPart","appeng.parts.automation.ImportBusPart","appeng.parts.automation.ExportBusPart",
         "appeng.parts.storagebus.StorageBusPart","appeng.parts.misc.InterfacePart","appeng.parts.crafting.PatternProviderPart");
@@ -21,7 +20,6 @@ public final class NativeTemporalScheduler {
         "appeng.blockentity.storage.DriveBlockEntity","com.syaru.ae2machines.platform.EnergyPortEntity");
     private final NativeWorldSession session;
     private final ServerLevel world;
-    private final Map<BlockPos,NativeFurnaceTime.Frame> furnaces=new HashMap<>();
     private boolean dirty=true,staticSafe;
     private List<BlockEntity> blocks=List.of();
     private String staticReason="UNDECLARED_BLOCK";
@@ -29,7 +27,6 @@ public final class NativeTemporalScheduler {
     private String reason="NOT_RUN";
     public NativeTemporalScheduler(NativeWorldSession session){this.session=session;world=session.world();}
     public void invalidate(){dirty=true;}
-    void observeFurnace(NativeFurnaceTime.Frame frame){furnaces.put(frame.owner().getBlockPos(),frame);}
     public record Statistics(long skippedTicks,long spans,String lastBoundary){}
     public Statistics statistics(){return new Statistics(skipped,spans,reason);}
     public static boolean passiveContract(BlockEntity be){
@@ -44,8 +41,7 @@ public final class NativeTemporalScheduler {
         if(offered<2)return 0;
         if(NativeCircuitOptions.ENABLED && !dirty && !staticSafe)return blocked(staticReason);
         if(!session.isOnline())return blocked("OFFLINE");
-        if(session.batches().requiresWorldTicks() || session.variable()!=null && session.variable().requiresWorldTicks()
-                || session.generic().hasTargets())return blocked("OWNED_EXECUTOR");
+        if(session.batches().requiresWorldTicks() || session.variable()!=null && session.variable().requiresWorldTicks())return blocked("OWNED_EXECUTOR");
         if(dirty){
             staticSafe=true;staticReason="UNDECLARED_BLOCK";var found=new ArrayList<BlockEntity>();var state=NativeWorldRuntime.get(world).state();
             for(int x=state.minX();x<=state.maxX();x++)for(int z=state.minZ();z<=state.maxZ();z++){
@@ -58,8 +54,9 @@ public final class NativeTemporalScheduler {
                 found.addAll(chunk.getBlockEntities().values());
             }
             blocks=List.copyOf(found);
-            if(staticSafe)for(var be:blocks)if(!PASSIVE.contains(be.getClass().getName()) && !NativeFurnaceTime.supports(be)
-                    && !(NativeMachines.mek() && com.syaru.ae2machines.compat.mek.MekQuietTime.supports(be))){staticSafe=false;staticReason="UNDECLARED_MACHINE";break;}
+            if(staticSafe)for(var be:blocks)if(!(be instanceof com.syaru.ae2machines.api.NativeTimeParticipant) && !PASSIVE.contains(be.getClass().getName())){
+                staticSafe=false;staticReason="NO_NATIVE_TIME_CONTRACT";break;
+            }
             dirty=false;
         }
         if(!staticSafe)return blocked(staticReason);
@@ -92,9 +89,23 @@ public final class NativeTemporalScheduler {
                 }else if(be instanceof appeng.me.helpers.IGridConnectedBlockEntity network && !NativeGridState.indexed(world,network.getMainNode().getNode()))return blocked("AE2_UNINDEXED_NODE");
                 continue;
             }
-            NativeQuietStep step=NativeFurnaceTime.plan(be,count,furnaces.get(be.getBlockPos()));
-            if(step==null && NativeMachines.mek())step=com.syaru.ae2machines.compat.mek.MekQuietTime.plan(be,count);
-            if(step==null)return blocked("UNDECLARED_MACHINE");
+            NativeQuietStep step;
+            try{
+                step=be instanceof com.syaru.ae2machines.api.NativeTimeMachine?session.generic().planTime(be,count):null;
+                if(step==null && !(be instanceof com.syaru.ae2machines.api.NativeTimeMachine) && be instanceof com.syaru.ae2machines.api.NativeTimeParticipant participant){
+                    var planned=participant.nativeTimeStep(count);
+                    if(planned!=null){
+                        if(planned.limit()>count)throw new IllegalArgumentException("NATIVE_TIME_INTERVAL_EXCEEDS_OFFER");
+                        step=new NativeQuietStep(planned.limit(),planned.advance(),planned.rollback());
+                    }
+                }
+            }
+            catch(RuntimeException invalid){
+                if(!session.generic().quarantined())throw invalid;
+                org.slf4j.LoggerFactory.getLogger(NativeTemporalScheduler.class).error("Native time plan quarantined at {}",be.getBlockPos(),invalid);
+                return blocked("NATIVE_TIME_CONTRACT_VIOLATION");
+            }
+            if(step==null)return blocked("NATIVE_TIME_BOUNDARY");
             count=Math.min(count,step.limit());steps.add(step);
             if(count<2)return blocked("MACHINE_EVENT");
         }
@@ -111,11 +122,14 @@ public final class NativeTemporalScheduler {
         }catch(RuntimeException|Error failure){
             try{for(int i=steps.size()-1;i>=0;i--)steps.get(i).rollback().run();state.load(before);}
             catch(Throwable undo){failure.addSuppressed(undo);throw new ExternalHandoffs.PersistenceFailure(failure);}
+            if(failure instanceof RuntimeException && !(failure instanceof ExternalHandoffs.PersistenceFailure) && session.generic().quarantined()){
+                org.slf4j.LoggerFactory.getLogger(NativeTemporalScheduler.class).error("Native time update rolled back and quarantined",failure);
+                return blocked("NATIVE_TIME_CONTRACT_VIOLATION");
+            }
             throw failure;
         }
     }
     private static boolean quietBlock(net.minecraft.world.level.block.state.BlockState state){
-        return state.isAir() || !state.isRandomlyTicking() && state.getFluidState().isEmpty()
-                && (state.hasBlockEntity() || STATIC_BLOCKS.contains(state.getBlock()));
+        return !state.isRandomlyTicking() && state.getFluidState().isEmpty();
     }
 }

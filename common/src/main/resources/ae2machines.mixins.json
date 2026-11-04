@@ -93,6 +93,7 @@
     "MekCachedOperationsAccess",
     "MekNativeStepMixin",
     "MekTimeRecipeAccess",
+    "MekTimeParticipantMixin",
     "MekTimeCacheAccess",
     "MekTimeBaseAccess",
     "MekTimeTrackerAccess",

@@ -2,6 +2,8 @@
 
 The public snapshot contains the production implementation and resources for both loaders. Private acceptance worlds, crash fixtures, test helper mods, logs, local dependency binaries and desktop automation are not included.
 
+Private acceptance and benchmark tasks referenced in development scripts are not part of the public test suite. Their fixtures are excluded; use the production jar targets below for this source snapshot.
+
 Use JDK 17 for Forge 1.20.1 and JDK 21 for NeoForge 1.21.1. The checked-in Gradle wrapper selects the toolchain; Java toolchain auto-download is disabled.
 
 ```powershell

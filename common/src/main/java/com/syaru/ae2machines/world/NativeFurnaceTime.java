@@ -7,6 +7,11 @@ import net.minecraft.world.level.block.entity.*;
 
 public final class NativeFurnaceTime {
     private NativeFurnaceTime(){}
+    public static com.syaru.ae2machines.api.NativeTimeParticipant.Step planNative(AbstractFurnaceBlockEntity machine,int offered){
+        if(!(machine.getLevel() instanceof net.minecraft.server.level.ServerLevel world) || !NativeCellWorlds.owns(world))return null;
+        var step=plan(machine,offered,NativeWorldRuntime.get(world).furnaceFrame(machine.getBlockPos()));
+        return step==null?null:new com.syaru.ae2machines.api.NativeTimeParticipant.Step(step.limit(),step.advance(),step.rollback());
+    }
     static boolean supports(BlockEntity be){return be.getClass()==FurnaceBlockEntity.class || be.getClass()==BlastFurnaceBlockEntity.class || be.getClass()==SmokerBlockEntity.class;}
     record Frame(BlockEntity owner,long tick,int lit,int progress,ItemStack input,ItemStack output,ItemStack fuel){}
     public static void before(AbstractFurnaceBlockEntity m){
