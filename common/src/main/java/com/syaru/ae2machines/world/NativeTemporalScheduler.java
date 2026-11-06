@@ -66,15 +66,16 @@ public final class NativeTemporalScheduler {
         if(world.getLevelData().isRaining() || world.getLevelData().isThundering() || weather.machines$timeRain()!=0
                 || weather.machines$timePreviousRain()!=0 || weather.machines$timeThunder()!=0 || weather.machines$timePreviousThunder()!=0)return blocked("WEATHER");
         if(NativeMachines.mek() && !com.syaru.ae2machines.platform.MekTimeClock.worldQuiet(world))return blocked("MEK_WORLD_EVENT");
-        if(world.getBlockTicks().count()!=0 || world.getFluidTicks().count()!=0
-                || !((com.syaru.ae2machines.mixin.NativeServerWorldAccess)world).ae2machines$blockEvents().isEmpty())return blocked("WORLD_EVENT");
+        if(!((com.syaru.ae2machines.mixin.NativeServerWorldAccess)world).ae2machines$blockEvents().isEmpty())return blocked("WORLD_EVENT");
+        offered=NativeTickHorizon.world(world,offered);
+        if(offered<2)return blocked("SCHEDULED_WORLD_EVENT");
         var calls=(com.syaru.ae2machines.mixin.NativeTemporalCallsAccess)appeng.hooks.ticking.TickHandler.instance();
         var queue=calls.machines$timeCalls().get(world);
         if(queue!=null && !queue.isEmpty() || calls.machines$timeCalculations().containsKey(world))return blocked("AE2_CALLABLE");
         long now=world.getGameTime();long next=NativeGridState.nextEvent(world);
-        int count=next==Long.MAX_VALUE?offered:next<=now?0:(int)Math.min(offered,Math.max(0,next-now-1));
+        int count=next==Long.MAX_VALUE?offered:NativeTickHorizon.before(now,offered,next);
         if(count<2)return blocked("AE2_EVENT");
-        var steps=new ArrayList<NativeQuietStep>();
+        var steps=new ArrayList<NativeQuietStep>();var local=new ArrayList<BlockEntity>();
         for(var be:blocks){
             if(be.isRemoved() || world.getBlockEntity(be.getBlockPos())!=be){dirty=true;return blocked("REMOVED_BLOCK_ENTITY");}
             if(PASSIVE.contains(be.getClass().getName())){
@@ -89,10 +90,11 @@ public final class NativeTemporalScheduler {
                 }else if(be instanceof appeng.me.helpers.IGridConnectedBlockEntity network && !NativeGridState.indexed(world,network.getMainNode().getNode()))return blocked("AE2_UNINDEXED_NODE");
                 continue;
             }
+            if(be instanceof com.syaru.ae2machines.api.NativeTimeMachine){local.add(be);continue;}
             NativeQuietStep step;
             try{
-                step=be instanceof com.syaru.ae2machines.api.NativeTimeMachine?session.generic().planTime(be,count):null;
-                if(step==null && !(be instanceof com.syaru.ae2machines.api.NativeTimeMachine) && be instanceof com.syaru.ae2machines.api.NativeTimeParticipant participant){
+                step=null;
+                if(be instanceof com.syaru.ae2machines.api.NativeTimeParticipant participant){
                     var planned=participant.nativeTimeStep(count);
                     if(planned!=null){
                         if(planned.limit()>count)throw new IllegalArgumentException("NATIVE_TIME_INTERVAL_EXCEEDS_OFFER");
@@ -103,6 +105,18 @@ public final class NativeTemporalScheduler {
             catch(RuntimeException invalid){
                 if(!session.generic().quarantined())throw invalid;
                 org.slf4j.LoggerFactory.getLogger(NativeTemporalScheduler.class).error("Native time plan quarantined at {}",be.getBlockPos(),invalid);
+                return blocked("NATIVE_TIME_CONTRACT_VIOLATION");
+            }
+            if(step==null)return blocked("NATIVE_TIME_BOUNDARY");
+            count=Math.min(count,step.limit());steps.add(step);
+            if(count<2)return blocked("MACHINE_EVENT");
+        }
+        if(!local.isEmpty()){
+            NativeQuietStep step;
+            try{step=session.generic().planTimes(local,count);}
+            catch(RuntimeException invalid){
+                if(!session.generic().quarantined())throw invalid;
+                org.slf4j.LoggerFactory.getLogger(NativeTemporalScheduler.class).error("Native time plan quarantined",invalid);
                 return blocked("NATIVE_TIME_CONTRACT_VIOLATION");
             }
             if(step==null)return blocked("NATIVE_TIME_BOUNDARY");
@@ -122,6 +136,7 @@ public final class NativeTemporalScheduler {
         }catch(RuntimeException|Error failure){
             try{for(int i=steps.size()-1;i>=0;i--)steps.get(i).rollback().run();state.load(before);}
             catch(Throwable undo){failure.addSuppressed(undo);throw new ExternalHandoffs.PersistenceFailure(failure);}
+            if(failure instanceof NativeQuietStep.StateChanged)return blocked("NATIVE_RECIPE_STATE_CHANGED");
             if(failure instanceof RuntimeException && !(failure instanceof ExternalHandoffs.PersistenceFailure) && session.generic().quarantined()){
                 org.slf4j.LoggerFactory.getLogger(NativeTemporalScheduler.class).error("Native time update rolled back and quarantined",failure);
                 return blocked("NATIVE_TIME_CONTRACT_VIOLATION");

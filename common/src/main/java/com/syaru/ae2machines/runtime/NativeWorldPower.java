@@ -39,7 +39,7 @@ public final class NativeWorldPower {
         this.world=world;this.min=min;this.max=max;this.internalRouting=internalRouting;this.endpoints=List.copyOf(endpoints);
     }
     public List<BlockEntity> blocks() {
-        long revision=NativeWorldRuntime.get(world).topologyRevision();
+        long revision=NativeWorldRuntime.get(world).equipmentRevision();
         if(NativeThermalOptions.ENABLED && blocksRevision==revision)return blockSnapshot;
         var result=new ArrayList<BlockEntity>();
         for(int x=min.getX()>>4;x<=max.getX()>>4;x++)for(int z=min.getZ()>>4;z<=max.getZ()>>4;z++) {

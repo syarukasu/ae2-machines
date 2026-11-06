@@ -4,6 +4,7 @@ import appeng.me.cluster.implementations.CraftingCPUCluster;
 import com.syaru.ae2machines.engine.HandoffLog;
 import com.syaru.ae2machines.platform.PlatformData;
 import com.syaru.ae2machines.runtime.FactorySession;
+import com.syaru.ae2machines.runtime.CountedCraftingProvider;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.*;
 import net.minecraft.server.level.ServerLevel;
@@ -34,6 +35,9 @@ public final class ExternalHandoffs {
         return result;
     }
     public static Transaction begin(FactorySession session,Map<Long,CompoundTag> beforeCpu) {
+        return begin((CountedCraftingProvider)session,beforeCpu);
+    }
+    public static Transaction begin(CountedCraftingProvider session,Map<Long,CompoundTag> beforeCpu) {
         var owner=session.handoffOwner();var level=owner.handoffLevel();
         if(!level.getServer().isSameThread())throw new IllegalStateException("External handoff requires server thread");
         if(ACTIVE.containsKey(level.getServer()))throw new PersistenceFailure(new IllegalStateException("Nested external handoff"));
@@ -43,18 +47,25 @@ public final class ExternalHandoffs {
         if(!RecoveryParticipants.linksCovered(participants))return null;
         var journal=owner.handoffJournal();
         try {
-            var tx=new Transaction(level,journal,participants,false);
+            var tx=new Transaction(level,journal,participants,owner.nativeWorldHandoff());
             tx.entry=tx.log.prepare(journal.id(),encode(tx.image(journal.read(),beforeCpu)));
             journal.beginHandoff();
             ACTIVE.put(level.getServer(),tx);return tx;
         } catch(Exception failure){throw new PersistenceFailure(failure);}
     }
     public static boolean supports(FactorySession session) {
+        return supports((CountedCraftingProvider)session);
+    }
+    public static boolean supports(CountedCraftingProvider session) {
         var participants=session.handoffOwner().recoveryParticipants();
         return !participants.isEmpty() && RecoveryParticipants.linksCovered(participants);
     }
     public static boolean supportsNativeOutput(com.syaru.ae2machines.runtime.NativeWorldSession session) {
         return !NativeWorldCheckpoint.outputParticipants(session.host(),session.world()).isEmpty();
+    }
+    public static boolean nativeHandoffActive(FactoryJournal journal) {
+        for(var tx:ACTIVE.values())if(tx.journal==journal && tx.nativeOutput && !tx.closed)return true;
+        return false;
     }
     public static Transaction beginNativeOutput(com.syaru.ae2machines.runtime.NativeWorldSession session,FactoryJournal journal) {
         var level=(ServerLevel)session.host().getLevel();
@@ -113,7 +124,8 @@ public final class ExternalHandoffs {
         private Transaction(ServerLevel level,FactoryJournal journal,Set<BlockEntity> participants,boolean nativeOutput) {
             this.level=level;this.journal=journal;this.participants=Set.copyOf(participants);this.nativeOutput=nativeOutput;log=log(level);
         }
-        public boolean owns(FactorySession session) {return !closed && session.handoffOwner().handoffJournal()==journal;}
+        public boolean owns(FactorySession session) {return owns((CountedCraftingProvider)session);}
+        public boolean owns(CountedCraftingProvider session) {return !closed && session.handoffOwner().handoffJournal()==journal;}
         private CompoundTag image(CompoundTag record,Map<Long,CompoundTag> override) {
             var assets=assets(record);
             if(assets==null)throw new IllegalStateException("Handoff ledger is not a native normal job");

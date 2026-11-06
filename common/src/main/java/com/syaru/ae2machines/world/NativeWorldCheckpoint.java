@@ -175,7 +175,14 @@ public final class NativeWorldCheckpoint {
             if(!actual.equals(saved))return "CHUNK_CHANGED:"+dimension+":"+saved.getLong("chunk");
         }
         if(!nativeSide || !externalSide)return "MISSING_SIDE";
-        return checkpoint.getString("clock").equals(NbtWitness.digest(NativeWorldRuntime.get(world).state().save(new CompoundTag())))?null:"NATIVE_CLOCK_CHANGED";
+        return clockMatches(NativeWorldRuntime.get(world).state(),checkpoint.getString("clock"))?null:"NATIVE_CLOCK_CHANGED";
+    }
+    public static boolean clockMatches(NativeWorldState state,String expected){
+        var saved=state.save(new CompoundTag());
+        if(expected.equals(NbtWitness.digest(saved)))return true;
+        // Only an actually loaded old save, before any new work, can use its old witness.
+        if(!state.legacyClockLoaded())return false;
+        saved.remove("processingTicks");return expected.equals(NbtWitness.digest(saved));
     }
     private static void clear(FactoryJournal journal) {
         var record=journal.read();if(!record.contains("nativeCheckpoint"))return;

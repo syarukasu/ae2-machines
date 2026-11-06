@@ -47,6 +47,9 @@ public final class MekNativeNetworks {
         for (var network : networks.snapshot)
             if (networks.members.contains(network) && !network.isEmpty()) network.onUpdate();
     }
+    public static boolean hasNetworks(ServerLevel world){
+        var index=NETWORKS.get(world);return index!=null && !index.members.isEmpty();
+    }
     public static void unload(Level world) { NETWORKS.remove(world); }
     public static void stopped(net.minecraft.server.MinecraftServer server) {
         NETWORKS.keySet().removeIf(level -> level instanceof ServerLevel world && world.getServer() == server);

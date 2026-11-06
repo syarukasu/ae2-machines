@@ -25,13 +25,13 @@ public abstract class NativeGridTicksMixin {
         if(nativeWorld && !NativeWorldRuntime.get((ServerLevel)level).running())return;
         if(!nativeWorld && machines$clocks.isEmpty()){tickQueue(queue);return;}
         long global=machines$clocks.isEmpty()?currentTick:machines$clocks.getLast();
-        machines$clocks.push(currentTick);currentTick=nativeWorld?level.getGameTime():global;
+        machines$clocks.push(currentTick);currentTick=nativeWorld?NativeWorldRuntime.get((ServerLevel)level).state().ticks():global;
         try{tickQueue(queue);}finally{currentTick=machines$clocks.pop();}
     }
     @Redirect(method="addNode",at=@At(value="NEW",target="appeng/me/service/helpers/TickTracker"))
     private TickTracker machines$nativeRegistration(TickingRequest request,IGridNode node,IGridTickable tickable,long time) {
         var level=node.getLevel();
         long global=machines$clocks.isEmpty()?time:machines$clocks.getLast();
-        return new TickTracker(request,node,tickable,level!=null && NativeCellWorlds.owns(level)?level.getGameTime():global);
+        return new TickTracker(request,node,tickable,level!=null && NativeCellWorlds.owns(level)?NativeWorldRuntime.get(level).state().ticks():global);
     }
 }

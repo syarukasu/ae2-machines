@@ -12,4 +12,9 @@ public interface MekTimeBaseAccess {
     @Accessor("updateDelay") int machines$timeDelay();
     @Accessor("updateDelay") void machines$timeDelay(int value);
     @Accessor("lastEnergyTracker") LastEnergyTracker machines$timeEnergyTracker();
+    @Accessor("currentRedstoneLevel") int machines$timeRedstone();
+    @Accessor("currentRedstoneLevel") void machines$timeRedstone(int value);
+    @Accessor("updateComparators") boolean machines$timeComparator();
+    @Accessor("updateComparators") void machines$timeComparator(boolean value);
+    @Invoker("getRedstoneLevel") int machines$timeRedstoneLevel();
 }

@@ -10,6 +10,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class NativeTopologyBlockEntityMixin {
     @Inject(method={"setRemoved","clearRemoved"},at=@At("RETURN"))
     private void machines$topologyChanged(CallbackInfo ci){
-        if(((BlockEntity)(Object)this).getLevel() instanceof ServerLevel level && NativeWorldRuntime.owns(level))NativeWorldRuntime.get(level).invalidateTemporal();
+        var block=(BlockEntity)(Object)this;
+        if(block.getLevel() instanceof ServerLevel level && NativeWorldRuntime.owns(level)){
+            var pos=block.getBlockPos();
+            var chunk=level.getChunkSource().getChunkNow(pos.getX()>>4,pos.getZ()>>4);
+            // Isolated native recipe representatives do not alter the resident factory topology.
+            if(chunk!=null && chunk.getBlockEntities().get(pos)==block)NativeWorldRuntime.get(level).invalidateEquipment(pos);
+        }
     }
 }

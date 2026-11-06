@@ -7,6 +7,9 @@ import net.minecraft.nbt.CompoundTag;
 public final class NativeWorldState {
     private UUID owner;
     private long ticks;
+    private long processingTicks;
+    private int processingDepth;
+    private boolean legacyClockLoaded;
     private long dayTime;
     private java.math.BigInteger tickDebt=java.math.BigInteger.ZERO;
     private java.math.BigInteger lanes=java.math.BigInteger.ONE;
@@ -35,17 +38,30 @@ public final class NativeWorldState {
 
     public void advance(boolean daylight) {
         long next = Math.incrementExact(ticks);
+        long nextProcessing = Math.incrementExact(processingTicks);
         long nextDay = daylight ? Math.incrementExact(dayTime) : dayTime;
-        ticks = next; dayTime = nextDay;
+        ticks = next; processingTicks = nextProcessing; dayTime = nextDay;legacyClockLoaded=false;
         changed.run();
     }
     public void advance(int count,boolean daylight){
         if(count<0)throw new IllegalArgumentException("Negative world interval");
         long next=Math.addExact(ticks,count),nextDay=daylight?Math.addExact(dayTime,count):dayTime;
-        ticks=next;dayTime=nextDay;changed.run();
+        long nextProcessing=Math.addExact(processingTicks,count);
+        ticks=next;processingTicks=nextProcessing;dayTime=nextDay;legacyClockLoaded=false;changed.run();
     }
 
     public long ticks() { return ticks; }
+    public long processingTicks(){return processingTicks;}
+    public boolean legacyClockLoaded(){return legacyClockLoaded && processingTicks==ticks;}
+    public long visibleTicks(){return processingDepth==0?ticks:processingTicks;}
+    public <T> T processingClock(java.util.function.Supplier<T> action){
+        processingDepth++;
+        try{return action.get();}finally{processingDepth--;}
+    }
+    public void advanceProcessing(int count){
+        if(count<0)throw new IllegalArgumentException("Negative processing interval");
+        processingTicks=Math.addExact(processingTicks,count);if(count>0)legacyClockLoaded=false;changed.run();
+    }
     public java.math.BigInteger lanes(){return lanes;}
     public int nativeLanes(){return nativeLanes;}
     public int parallelWork(long position){return parallelWork.getOrDefault(position,1);}
@@ -57,6 +73,9 @@ public final class NativeWorldState {
     public int processWork(long position,int process){
         if(process==0)return parallelWork(position);
         return processWork.getOrDefault(position,java.util.Map.of()).getOrDefault(process,1);
+    }
+    public int recordedProcessWork(long position,int process){
+        return process==0?parallelWork.getOrDefault(position,0):processWork.getOrDefault(position,java.util.Map.of()).getOrDefault(process,0);
     }
     public void processWork(long position,int process,int count){
         if(process<0 || count<0)throw new IllegalArgumentException("NATIVE_WORLD_INVALID_PARALLEL_WORK");
@@ -78,7 +97,7 @@ public final class NativeWorldState {
     }
     public void setTime(long ticks, long dayTime) {
         if(ticks < 0) throw new IllegalArgumentException("NATIVE_WORLD_INVALID_CLOCK");
-        this.ticks=ticks;this.dayTime=dayTime;changed.run();
+        this.ticks=ticks;this.processingTicks=Math.max(processingTicks,ticks);this.dayTime=dayTime;legacyClockLoaded=false;changed.run();
     }
     public net.minecraft.world.level.GameRules rules() { return rules; }
     public void initialRules(net.minecraft.world.level.GameRules source) {
@@ -96,6 +115,7 @@ public final class NativeWorldState {
         tag.putInt("schema", 1);
         tag.put("rules", rules.createTag());
         tag.putLong("ticks", ticks); tag.putLong("dayTime", dayTime);
+        tag.putLong("processingTicks",processingTicks);
         tag.putByteArray("tickDebt",tickDebt.toByteArray());
         tag.putByteArray("lanes",lanes.toByteArray());
         var work=new CompoundTag();parallelWork.forEach((p,n)->work.putInt(Long.toString(p),n));tag.put("parallelWork",work);
@@ -119,6 +139,9 @@ public final class NativeWorldState {
             claim(tag.getUUID("factory"), tag.getInt("minX"), tag.getInt("minZ"),
                     tag.getInt("maxX"), tag.getInt("maxZ"), tag.getLong("dayTime"));
         ticks = tag.getLong("ticks"); dayTime = tag.getLong("dayTime");
+        processingTicks=tag.contains("processingTicks")?tag.getLong("processingTicks"):ticks;
+        legacyClockLoaded=!tag.contains("processingTicks");
+        if(processingTicks<ticks)throw new IllegalArgumentException("NATIVE_WORLD_INVALID_PROCESSING_CLOCK");
         tickDebt=tag.contains("tickDebt")?new java.math.BigInteger(tag.getByteArray("tickDebt")):java.math.BigInteger.ZERO;
         if(tickDebt.signum()<0)throw new IllegalArgumentException("NATIVE_WORLD_NEGATIVE_WORK");
         lanes(tag.contains("lanes")?new java.math.BigInteger(tag.getByteArray("lanes")):java.math.BigInteger.ONE);

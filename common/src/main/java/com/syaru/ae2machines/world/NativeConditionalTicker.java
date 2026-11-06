@@ -8,22 +8,22 @@ import net.minecraft.world.level.block.entity.TickingBlockEntity;
 final class NativeConditionalTicker implements TickingBlockEntity {
     private final TickingBlockEntity source;
     private final MekThermalShells.Shell shell;
-    private NativeQuietStep clock;
+    private int clockLimit;
     private long basedAt;
     private long skipped;
-    NativeConditionalTicker(TickingBlockEntity source,MekThermalShells.Shell shell){this.source=source;this.shell=shell;clock=shell.clock();basedAt=shell.owner().getLevel().getGameTime();}
+    NativeConditionalTicker(TickingBlockEntity source,MekThermalShells.Shell shell){this.source=source;this.shell=shell;clockLimit=shell.clockLimit();basedAt=shell.owner().getLevel().getGameTime();}
     MekThermalShells.Shell shell(){return shell;}
-    boolean quiet(){return clock!=null && clock.limit()>0 && !isRemoved() && shell.quiet().getAsBoolean();}
-    long deadline(){return Math.addExact(basedAt,clock.limit());}
+    boolean quiet(){return clockLimit>0 && !isRemoved() && shell.quiet().getAsBoolean();}
+    long deadline(){return Math.addExact(basedAt,Math.max(0,clockLimit));}
     void flush(long through){
         int count=Math.toIntExact(Math.max(0,through-basedAt));
-        if(count>0 && clock!=null){clock.advance().accept(count);skipped+=count;basedAt=through;}
+        if(count>0 && clockLimit>=0){shell.advance(count,through);skipped+=count;basedAt=through;}
     }
     long skipped(){return skipped;}
-    void removed(){flush(shell.owner().getLevel().getGameTime()-1);clock=null;}
+    void removed(){flush(shell.owner().getLevel().getGameTime()-1);clockLimit=-1;}
     @Override public void tick(){
         long now=shell.owner().getLevel().getGameTime();flush(now-1);source.tick();basedAt=now;
-        clock=isRemoved()?null:shell.reset().get();
+        clockLimit=isRemoved()?-1:shell.clockLimit();
     }
     @Override public boolean isRemoved(){return source.isRemoved();}
     @Override public BlockPos getPos(){return source.getPos();}

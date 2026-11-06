@@ -11,6 +11,7 @@ import net.minecraft.world.level.block.entity.*;
 final class NativeThermalBatch implements AutoCloseable {
     private static NativeThermalBatch denied(ServerLevel world,String why){NativeWorldRuntime.get(world).thermalBoundary(why);return null;}
     private final ServerLevel world;
+    private final NativeWorldRuntime runtime;
     private final List<TickingBlockEntity> source,active;
     private final List<MekThermalShells.Shell> shells;
     private final List<NativeConditionalTicker> conditional;
@@ -23,8 +24,9 @@ final class NativeThermalBatch implements AutoCloseable {
     private final int limit;
     private int completed;
     private boolean closed;
+    private boolean processingOnly;
     private NativeThermalBatch(ServerLevel world,List<TickingBlockEntity> source,List<TickingBlockEntity> active,List<MekThermalShells.Shell> shells,int limit){
-        this.world=world;this.source=source;this.active=active;this.shells=shells;this.limit=limit;sourceSize=source.size();revision=NativeWorldRuntime.get(world).topologyRevision();
+        this.world=world;runtime=NativeWorldRuntime.get(world);this.source=source;this.active=active;this.shells=shells;this.limit=limit;sourceSize=source.size();revision=runtime.topologyRevision();
         conditional=active.stream().filter(NativeConditionalTicker.class::isInstance).map(NativeConditionalTicker.class::cast).toList();
         startedAt=world.getGameTime();var byOwner=new IdentityHashMap<Object,NativeConditionalGroup>();nativeSlots=new ArrayList<>();
         for(int i=0;i<active.size();i++){
@@ -47,9 +49,10 @@ final class NativeThermalBatch implements AutoCloseable {
                 if(prepared)return true;
                 while(cursor<nativeSlots.size() && nativeSlots.get(cursor).removed)cursor++;
                 next=cursor<nativeSlots.size()?nativeSlots.get(cursor):null;nextGroup=-1;
-                boolean valid=!closed && NativeWorldRuntime.get(world).topologyRevision()==revision;
+                boolean valid=!closed && runtime.topologyRevision()==revision;
+                long now=world.getGameTime();
                 for(int i=0;i<groups.size();i++){
-                    var group=groups.get(i);group.observe(world.getGameTime(),valid);if(group.dormant)continue;
+                    var group=groups.get(i);group.observe(now,valid);if(group.dormant)continue;
                     int p=groupCursors[i];
                     if(p<group.members.size() && group.members.get(p).position<=lastPosition)p=group.after(lastPosition);
                     while(p<group.members.size() && group.members.get(p).removed)p++;
@@ -68,39 +71,63 @@ final class NativeThermalBatch implements AutoCloseable {
         return queue!=null && !queue.isEmpty() || calls.machines$timeCalculations().containsKey(world);
     }
     static NativeThermalBatch open(ServerLevel world,NativeWorldSession session,int count){
-        if(!NativeThermalOptions.ENABLED || count<2 || session.generic().hasTargets() || session.batches().requiresWorldTicks()
-                || session.variable()!=null && session.variable().requiresWorldTicks()
-                || !com.syaru.ae2machines.platform.TemporalLevelHooks.safe() || !com.syaru.ae2machines.platform.MekTimeClock.worldQuiet(world)
-                || world.getAllEntities().iterator().hasNext() || world.getBlockTicks().count()!=0 || world.getFluidTicks().count()!=0)return denied(world,"EXECUTOR_HOOK_OR_WORLD_EVENT");
+        if(!NativeThermalOptions.ENABLED || count<2)return denied(world,"DISABLED_OR_SHORT");
+        if(session.generic().hasTargets() || session.batches().requiresWorldTicks() || session.variable()!=null && session.variable().requiresWorldTicks())return denied(world,"OWNED_EXECUTOR");
+        if(!com.syaru.ae2machines.platform.TemporalLevelHooks.safe())return denied(world,"UNDECLARED_LEVEL_HOOK");
+        if(!com.syaru.ae2machines.platform.MekTimeClock.worldQuiet(world))return denied(world,"MEK_WORLD_EVENT");
+        if(world.getAllEntities().iterator().hasNext())return denied(world,"ENTITY");
+        count=NativeTickHorizon.world(world,count);
+        if(count<2)return denied(world,"SCHEDULED_WORLD_EVENT");
         if(pendingCall(world))return denied(world,"AE2_CALLABLE");
         long now=world.getGameTime(),next=com.syaru.ae2machines.runtime.NativeGridState.nextEvent(world);
-        if(next!=Long.MAX_VALUE)count=next<=now?0:(int)Math.min(count,Math.max(0,next-now-1));
+        if(next!=Long.MAX_VALUE)count=NativeTickHorizon.before(now,count,next);
         if(count<2)return denied(world,"AE2_EVENT");
         var access=(NativeThermalLevelAccess)world;if(!access.machines$thermalPending().isEmpty())return denied(world,"PENDING_TICKERS");
         if(world.isRaining() || world.isThundering() || !((com.syaru.ae2machines.mixin.NativeServerWorldAccess)world).ae2machines$blockEvents().isEmpty())return denied(world,"WEATHER_OR_BLOCK_EVENT");
         var region=NativeWorldRuntime.get(world).state();
         for(int x=region.minX();x<=region.maxX();x++)for(int z=region.minZ();z<=region.maxZ();z++){
             var chunk=world.getChunkSource().getChunkNow(x,z);if(chunk==null)return denied(world,"UNLOADED_CHUNK");
-            for(var section:chunk.getSections())if(!section.hasOnlyAir() && section.getStates().maybeHas(s->s.isRandomlyTicking() || !s.getFluidState().isEmpty()))return denied(world,"RANDOM_OR_FLUID_BLOCK");
-        }
-        var blocks=session.nativeBlocks();boolean thermal=false;
-        var validated=Collections.newSetFromMap(new IdentityHashMap<mekanism.common.lib.multiblock.MultiblockData,Boolean>());
-        for(var be:blocks){
-            if(com.syaru.ae2machines.world.NativeTemporalScheduler.passiveContract(be))continue;
-            if(!MekThermalShells.known(be))return denied(world,"UNDECLARED_BE:"+be.getClass().getName());
-            if(!MekThermalHooks.safe(be.getClass()))return denied(world,"UNDECLARED_MIXIN:"+be.getClass().getName());
-            if(be instanceof mekanism.common.lib.multiblock.IMultiblock<?> tile){
-                var d=tile.getMultiblock();if(validated.add(d) && !MekThermalShells.bounded(d,count))return denied(world,"UNSTABLE_DATA:"+d.getClass().getName());thermal=true;
+            // Fluid deadlines bound the interval above; the native level still dispatches them.
+            // A standing water source alone does not invalidate a structural clock contract.
+            for(var section:chunk.getSections())if(!section.hasOnlyAir() && section.getStates().maybeHas(s->s.isRandomlyTicking())){
+                var random=new boolean[1];
+                section.getStates().count((s,n)->{if(n>0 && s.isRandomlyTicking())random[0]=true;});
+                if(random[0])return denied(world,"RANDOM_BLOCK");
             }
         }
-        if(!thermal)return denied(world,"NO_THERMAL_DATA");
+        var runtime=NativeWorldRuntime.get(world);
+        long revision=runtime.topologyRevision();
+        var layout=runtime.thermalLayout(session);
+        if(layout==null)return denied(world,"TOPOLOGY_CHANGED");
+        var boundary=layout.boundary(count);
+        if(boundary!=null)return denied(world,boundary);
         var original=access.machines$thermalTickers();var active=new ArrayList<TickingBlockEntity>();var shells=new ArrayList<MekThermalShells.Shell>();
+        return build(world,session,count,layout,revision,original,false);
+    }
+    static NativeThermalBatch processing(ServerLevel world,NativeWorldSession session,int count,List<TickingBlockEntity> source){
+        if(!NativeThermalOptions.ENABLED || count<2 || session.batches().active()
+                || session.variable()!=null && session.variable().active())return null;
+        var runtime=NativeWorldRuntime.get(world);long revision=runtime.topologyRevision();
+        var layout=runtime.thermalLayout(session);if(layout==null)return null;
+        var boundary=layout.boundary(count);if(boundary!=null)return denied(world,boundary);
+        return build(world,session,count,layout,revision,source,true);
+    }
+    private static NativeThermalBatch build(ServerLevel world,NativeWorldSession session,int count,NativeThermalLayout layout,
+            long revision,List<TickingBlockEntity> original,boolean processingOnly){
+        var access=(NativeThermalLevelAccess)world;var runtime=NativeWorldRuntime.get(world);
+        var active=new ArrayList<TickingBlockEntity>();var shells=new ArrayList<MekThermalShells.Shell>();
         var heat=Collections.newSetFromMap(new IdentityHashMap<Object,Boolean>());
         for(var ticker:original){
             if(ticker.isRemoved())return denied(world,"REMOVED_TICKER");
-            if(!NativeRegionMove.contains(ticker.getPos(),session.previewFirst(),session.previewLast()))return denied(world,"TICKER_OUTSIDE_CELL");
-            var be=world.getBlockEntity(ticker.getPos());
-            var shell=be==null || !access.machines$thermalTicking(ticker.getPos())?null:MekThermalShells.plan(be,count);
+            var pos=ticker.getPos();
+            var be=layout.resident(pos);
+            if(be==null || be.isRemoved()){
+                if(!NativeRegionMove.contains(pos,layout.first,layout.last))return denied(world,"TICKER_OUTSIDE_CELL");
+                // Pending/unindexed tickers still resolve through vanilla.
+                be=world.getBlockEntity(pos);
+                if(be!=null)return denied(world,"UNINDEXED_TICKER");
+            }
+            var shell=be==null || !access.machines$thermalTicking(pos)?null:MekThermalShells.plan(be,count);
             // Only the declared native masters produce pending heat in this contract.
             // Material pipes, activation-only elements and unconnected vents cannot.
             // Keep the first native heat barrier for each account after its master.
@@ -114,23 +141,28 @@ final class NativeThermalBatch implements AutoCloseable {
                 if(shell!=null)heat.addAll(shell.heat());
             }
         }
+        if(runtime.topologyRevision()!=revision || !access.machines$thermalPending().isEmpty())return denied(world,"TOPOLOGY_CHANGED");
         if(shells.isEmpty() && active.stream().noneMatch(NativeConditionalTicker.class::isInstance))return denied(world,"NO_QUIET_SHELLS");
         NativeWorldRuntime.get(world).thermalBoundary("FOLDED:"+shells.size()+"/"+original.size());
         NativeWorldCheckpoint.beforeOwnedWork(world.getServer(),session.id());
-        return new NativeThermalBatch(world,original,active,shells,count);
+        var batch=new NativeThermalBatch(world,original,active,shells,count);batch.processingOnly=processingOnly;return batch;
     }
     List<TickingBlockEntity> tickers(List<TickingBlockEntity> original){
         if(closed)return original;
-        if(completed>=limit || pendingCall(world) || original!=source || original.size()!=sourceSize || NativeWorldRuntime.get(world).topologyRevision()!=revision
-                || !com.syaru.ae2machines.platform.TemporalLevelHooks.safe()){close();return original;}
+        if(completed>=limit || original!=source || original.size()!=sourceSize || runtime.topologyRevision()!=revision
+                || !processingOnly && (pendingCall(world) || !com.syaru.ae2machines.platform.TemporalLevelHooks.safe())){close();return original;}
         return conditional.isEmpty()?active:schedule;
     }
     void tickEnd(){if(!closed){completed++;for(var group:groups)if(!group.dormant)group.refresh();}}
     boolean finished(){return closed || completed>=limit;}
+    boolean witnessed(){
+        return !finished() && source.size()==sourceSize && runtime.topologyRevision()==revision
+                && !pendingCall(world) && ((NativeThermalLevelAccess)world).machines$thermalPending().isEmpty();
+    }
     @Override public void close(){
         if(closed)return;closed=true;
-        if(completed>0){for(var shell:shells)shell.clock().advance().accept(completed);}
+        if(completed>0){for(var shell:shells)shell.advance(completed,startedAt+completed);}
         long skipped=(long)completed*shells.size();for(var item:conditional){item.flush(startedAt+completed);skipped+=item.skipped();}
-        NativeWorldRuntime.get(world).thermalSkipped(skipped);
+        runtime.thermalSkipped(skipped);
     }
 }

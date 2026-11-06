@@ -51,9 +51,16 @@ public final class NativeParallelRuntime {
         if(source==null || !(source.getLevel() instanceof net.minecraft.server.level.ServerLevel world) || !NativeCellWorlds.owns(world))return null;
         return NativeWorldRuntime.get(world).generic();
     }
-    public static boolean owns(BlockEntity source){var r=get(source);return r!=null && !r.session.closed() && r.pools.containsKey(source.getBlockPos()) && r.pools.get(source.getBlockPos()).source==source && r.session.world().getBlockEntity(source.getBlockPos())==source;}
+    private boolean ownsSource(BlockEntity source){
+        if(pools.isEmpty() || session.closed())return false;
+        var pos=source.getBlockPos();var pool=pools.get(pos);
+        return pool!=null && pool.source==source && session.world().getBlockEntity(pos)==source;
+    }
+    public static boolean owns(BlockEntity source){var r=get(source);return r!=null && r.ownsSource(source);}
     public static boolean tickOwned(BlockEntity source){
-        var r=get(source);if(r==null || !owns(source))return false;
+        // Pools can only contain declared participants; ordinary native tickers need no world lookup.
+        if(!(source instanceof NativeParallelMachine))return false;
+        var r=get(source);if(r==null || !r.ownsSource(source))return false;
         if(r.session.isOnline() && !r.quarantined)try{r.mutate(()->{r.pools.get(source.getBlockPos()).tick();return null;});}
         catch(RuntimeException error){org.slf4j.LoggerFactory.getLogger(NativeParallelRuntime.class).error("Native Q paused after restoring owned states at {}",source.getBlockPos(),error);}
         return true;
@@ -75,33 +82,38 @@ public final class NativeParallelRuntime {
     public boolean quarantined(){return quarantined;}
     /** Plan once per distinct native state, never per logical Q copy or elapsed S tick. */
     public NativeQuietStep planTime(BlockEntity source,int offered){
-        if(!TIME_BATCH)return null;
-        var pool=pools.get(source.getBlockPos());
-        if(pool==null || pool.source!=source || quarantined || !intact() || offered<2)return null;
-        return inspect(()->{
-            var before=pool.save();var steps=new ArrayList<NativeTimeMachine.Step>();int limit=offered;
-            for(var group:pool.groups){
+        return planTimes(List.of(source),offered);
+    }
+    /** Local-state contracts let all representatives share one audit and atomic checkpoint. */
+    public NativeQuietStep planTimes(Collection<BlockEntity> sources,int offered){
+        if(!TIME_BATCH || sources.isEmpty() || quarantined || offered<2 || !intact())return null;
+        var selected=new LinkedHashMap<BlockPos,Pool>();
+        for(var source:sources){
+            var pool=pools.get(source.getBlockPos());
+            if(pool==null || pool.source!=source)return null;
+            require(selected.put(source.getBlockPos(),pool)==null,"DUPLICATE_NATIVE_TIME_MACHINE");
+        }
+        return inspect(before->{
+            var steps=new ArrayList<NativeQuietStep>();
+            for(var pool:selected.values())for(var group:pool.groups){
                 if(!(group.lane() instanceof NativeTimeMachine machine))return null;
                 var step=NativeParallelContext.call(group.lane(),()->machine.nativeTimeStep(offered));
                 if(step==null)return null;
-                require(step.limit()<=offered,"NATIVE_TIME_INTERVAL_EXCEEDS_OFFER");
-                limit=Math.min(limit,step.limit());steps.add(step);
+                steps.add(new NativeQuietStep(step.limit(),n->{
+                    var data=nativeData(group.lane());var assets=pool.audit(group.lane());
+                    NativeParallelContext.call(group.lane(),()->{step.advance().accept(n);return null;});
+                    pool.recordWork(group,data,assets,BigInteger.valueOf(n));
+                },()->{}));
             }
-            int accepted=limit;
-            return new NativeQuietStep(accepted,n->{
-                require(n>0 && n<=accepted,"INVALID_NATIVE_TIME_ADVANCE");
-                mutate(()->{
-                    require(before.equals(pool.save()),"NATIVE_TIME_PLAN_STATE_CHANGED");
-                    require(pool.count().equals(BigInteger.ONE) || pool.contract.independentCopies(source),"NATIVE_PARALLEL_GROUP_CONTRACT_REQUIRED");
-                    for(int i=0;i<pool.groups.size();i++){
-                        var group=pool.groups.get(i);var data=nativeData(group.lane());var assets=pool.audit(group.lane());
-                        var step=steps.get(i);
-                        NativeParallelContext.call(group.lane(),()->{step.advance().accept(n);return null;});
-                        pool.recordWork(group,data,assets,BigInteger.valueOf(n));
-                    }
-                    pool.publishPrimaryState();pool.worldTicks=pool.worldTicks.add(BigInteger.valueOf(n));return null;
-                });
-            },()->{pool.load(before);pool.publishPrimaryState();save();});
+            return NativeQuietStep.batch(offered,steps,(change,n)->mutate(()->{
+                require(before.equals(saveTag()),"NATIVE_TIME_PLAN_STATE_CHANGED");
+                for(var pool:selected.values())require(pool.count().equals(BigInteger.ONE) || pool.contract.independentCopies(pool.source),"NATIVE_PARALLEL_GROUP_CONTRACT_REQUIRED");
+                change.run();
+                for(var pool:selected.values()){
+                    pool.publishPrimaryState();pool.worldTicks=pool.worldTicks.add(BigInteger.valueOf(n));
+                }
+                return null;
+            }),()->{restore(before);save();});
         });
     }
     public boolean intact(){return pools.values().stream().allMatch(p->!p.source.isRemoved() && session.world().getBlockEntity(p.source.getBlockPos())==p.source);}
@@ -110,7 +122,7 @@ public final class NativeParallelRuntime {
     public BigInteger insertEnergy(BlockPos pos,Direction side,BigInteger amount,boolean simulate){var p=Objects.requireNonNull(pools.get(pos));return side!=null && !p.contract.energyInput(side)?BigInteger.ZERO:energy(p,amount,simulate,false,side);}
     public BigInteger extractEnergy(BlockPos pos,Direction side,BigInteger amount,boolean simulate){var p=Objects.requireNonNull(pools.get(pos));return side!=null && !p.contract.energyOutput(side)?BigInteger.ZERO:energy(p,amount,simulate,true,side);}
     private List<BlockEntity> candidates(){
-        long revision=NativeWorldRuntime.get(session.world()).topologyRevision();
+        long revision=NativeWorldRuntime.get(session.world()).equipmentRevision();
         if(candidatesRevision!=revision){candidates=session.nativeBlocks().stream().filter(NativeParallelMachine.class::isInstance).toList();candidatesRevision=revision;}
         return candidates;
     }
@@ -175,9 +187,12 @@ public final class NativeParallelRuntime {
         for(var pool:pools.values())pool.publishPrimaryState();
     }
     private <T>T inspect(Supplier<T> action){
+        return inspect(before->action.get());
+    }
+    private <T>T inspect(java.util.function.Function<CompoundTag,T> action){
         if(!session.world().getServer().isSameThread())throw new IllegalStateException("Native Q requires server thread");
         var before=saveTag();
-        try{var result=action.get();require(before.equals(saveTag()),"NATIVE_PARALLEL_SIMULATION_MUTATED");return result;}
+        try{var result=action.apply(before);require(before.equals(saveTag()),"NATIVE_PARALLEL_SIMULATION_MUTATED");return result;}
         catch(RuntimeException|Error error){NativeWorldCheckpoint.beforeOwnedWork(session.world().getServer(),journal.id());restore(before);quarantined=true;save();throw error;}
     }
     public void save(){if(loading)return;var record=journal.read();record.put("genericNativeParallel",saveTag());journal.write(record);}

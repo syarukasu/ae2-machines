@@ -4,7 +4,22 @@ import com.syaru.ae2machines.world.NativeQuietStep;
 import mekanism.api.math.FloatingLong;
 import mekanism.common.tile.base.TileEntityMekanism;
 public final class MekTimeClock {
+    private static final boolean NATIVE_TRACKER=com.syaru.ae2machines.compat.mek.MekThermalHooks.safe(mekanism.common.lib.LastEnergyTracker.class);
     private MekTimeClock(){}
+    // Structural work commits after a revoked recovery witness; it never uses speculative rollback.
+    public static void advanceShell(TileEntityMekanism m,int ticks,long through){
+        var access=(MekTimeBaseAccess)m;m.ticker+=ticks;
+        access.machines$timeDelay(Math.max(0,access.machines$timeDelay()-ticks));
+        var tracker=access.machines$timeEnergyTracker();
+        var history=(MekTimeTrackerAccess)tracker;
+        // Two distinct empty ticks expire both history slots, regardless of the older receipt.
+        // Keep native calls at coincident timestamps and for foreign tracker implementations.
+        if(ticks>1 && NATIVE_TRACKER && tracker.getClass()==mekanism.common.lib.LastEnergyTracker.class && history.machines$time()!=through-1){
+            history.machines$time(through);history.machines$current(FloatingLong.ZERO);history.machines$last(FloatingLong.ZERO);
+        }else{
+            if(ticks>1)tracker.received(through-1,FloatingLong.ZERO);tracker.received(through,FloatingLong.ZERO);
+        }
+    }
     public static boolean transmitterQuiet(mekanism.common.tile.transmitter.TileEntityTransmitter m){return !((MekThermalTransportAccess)m).machines$thermalForceUpdate();}
     public static boolean glassStable(mekanism.common.tile.prefab.TileEntityStructuralMultiblock tile,String expected){return java.util.Objects.equals(expected,((MekThermalGlassAccess)tile).machines$thermalActive());}
     public static boolean worldQuiet(net.minecraft.server.level.ServerLevel level){

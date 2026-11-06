@@ -1,4 +1,14 @@
-# Common native Q/S execution (0.1.2-dev.2)
+# Common native Q/S execution
+
+## Current processing-only scheduler
+
+Version 0.1.3 separates processing time from world/AE time.
+See [Processing work execution](PROCESSING_WORK.md) for current scheduling,
+cache invalidation, recovery and verification boundaries. The public interfaces
+below remain compatible. The old whole-world scheduling description and measured
+dev.2 results below are historical, not current performance claims.
+
+## Historical 0.1.2-dev.2 design and evidence
 
 ## Direction
 

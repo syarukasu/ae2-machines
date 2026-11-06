@@ -14,7 +14,7 @@ public final class TemporalLevelHooks {
             var list=net.minecraftforge.eventbus.api.EventListenerHelper.getListenerList(net.minecraftforge.event.TickEvent.LevelTickEvent.class);
             var listeners=list.getListeners(id);if(previous==listeners)return accepted;
             previous=listeners;accepted=false;
-            for(var listener:listeners)if(!NativeTemporalHooks.known(listener))return false;
+            for(var listener:listeners)if(!NativeTemporalHooks.known(listener) && !SparkLevelObservers.ignoresLevel(listener))return false;
             return accepted=true;
         }catch(ReflectiveOperationException|RuntimeException unavailable){return false;}
     }

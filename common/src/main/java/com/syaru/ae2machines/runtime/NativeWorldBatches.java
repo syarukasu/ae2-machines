@@ -34,10 +34,19 @@ public final class NativeWorldBatches {
     private final Map<UUID,Entry> entries=new LinkedHashMap<>();
     private final Map<Long,Entry> occupiedMachines=new HashMap<>();
     private final Map<Long,Integer> occupiedProviders=new HashMap<>();
+    private final Map<Long,NormalProvider> normalProviders=new HashMap<>();
     private final Map<UUID,Terminal> terminal=new LinkedHashMap<>();
     private final Set<UUID> pendingEnergy=new LinkedHashSet<>();
     private record Terminal(CompoundTag tag,ProcessingRuntime runtime) {}
     private final Map<AEItemKey,List<Target>> targets=new HashMap<>();
+    private final Map<Long,List<Target>> providerTargets=new HashMap<>();
+    private final Map<Long,Set<Long>> dependents=new HashMap<>();
+    private final Map<Long,Set<Long>> providerDependencies=new HashMap<>();
+    private final Set<Long> dirtyProviders=new LinkedHashSet<>();
+    private final Map<BlockPos,List<BlockEntity>> structureProviders=new HashMap<>();
+    private long indexBuilds,providerBuilds,indexHits;
+    public record IndexStatistics(long builds,long providers,long hits){}
+    public IndexStatistics indexStatistics(){return new IndexStatistics(indexBuilds,providerBuilds,indexHits);}
     private record Binding(long machine,AEItemKey pattern,long revision) {}
     private final Map<Binding,NativeBatchProcessor> bindings=new HashMap<>();
     private boolean indexed,loading=true,rebindQuarantined;
@@ -60,7 +69,7 @@ public final class NativeWorldBatches {
         }
         terminal.forEach((id,t)->{if(t.runtime().energy().stored().signum()>0)pendingEnergy.add(id);});
         loading=false;
-        if(rebindQuarantined)save();
+        if(rebindQuarantined || !record.contains("worldBatches"))save();
     }
     private static ListTag savedEntries(CompoundTag saved) {
         require(saved.getInt("schema")==1 && saved.get("entries") instanceof ListTag,"UNKNOWN_NATIVE_BATCH_SCHEMA");
@@ -71,7 +80,7 @@ public final class NativeWorldBatches {
             var tag=(CompoundTag)value;var runtime=RuntimeCodec.read(tag.getCompound("runtime"),keyReader,ignored->{});
             if(runtime.quarantined() || runtime.energy().stored().signum()>0)return false;
             for(var job:runtime.snapshots())if(job.state()!=BatchJob.State.CANCELLED
-                    && !(tag.getBoolean("v2") && job.state()==BatchJob.State.ACKNOWLEDGED))return false;
+                    && !((tag.getBoolean("v2") || tag.getBoolean("normal")) && job.state()==BatchJob.State.ACKNOWLEDGED))return false;
         }
         return true;
     }
@@ -81,11 +90,25 @@ public final class NativeWorldBatches {
         return NativeWorldRuntime.get(level).batches();
     }
     public static boolean owns(BlockEntity machine) {var batches=get(machine);return batches!=null && batches.busy(machine.getBlockPos());}
+    public static void configurationChanged(BlockEntity machine) {
+        var batches=get(machine);if(batches==null)return;
+        var pos=machine.getBlockPos();
+        var chunk=batches.world.getChunkSource().getChunkNow(pos.getX()>>4,pos.getZ()>>4);
+        if(chunk!=null && chunk.getBlockEntities().get(pos)==machine)batches.invalidate(pos);
+    }
     public static boolean providerBusy(BlockEntity provider) {
         var batches=get(provider);if(batches==null)return false;
-        return batches.occupiedProviders.containsKey(provider.getBlockPos().asLong()) || batches.session.variable()!=null && batches.session.variable().providerBusy(provider.getBlockPos());
+        if(batches.session.variable()!=null && batches.session.variable().providerBusy(provider.getBlockPos()))return true;
+        if(!batches.occupiedProviders.containsKey(provider.getBlockPos().asLong()))return false;
+        return batches.entries.values().stream().filter(e->e.target.provider().equals(provider.getBlockPos()))
+                .anyMatch(e->!e.normal || !e.runtime.appendable());
+    }
+    public static boolean providerOccupied(BlockEntity provider) {
+        var batches=get(provider);return batches!=null && (batches.occupiedProviders.containsKey(provider.getBlockPos().asLong())
+                || batches.session.variable()!=null && batches.session.variable().providerBusy(provider.getBlockPos()));
     }
     public com.syaru.ae2machines.block.BaseAccelerator host(){return session.host();}
+    private long workTick(){return session.host().getLevel().getGameTime();}
     public UUID factoryId(){return journal.id();}
     public boolean busy(BlockPos machine){return occupiedMachines.containsKey(machine.asLong()) || session.variable()!=null && session.variable().busy(machine);}
     private void occupy(Entry e){
@@ -96,15 +119,90 @@ public final class NativeWorldBatches {
     private void release(Entry e){for(var pos:e.members)occupiedMachines.remove(pos.asLong(),e);occupiedProviders.computeIfPresent(e.target.provider().asLong(),(p,n)->n==1?null:n-1);}
     public boolean active(){return entries.values().stream().anyMatch(Entry::occupies);}
     public boolean requiresWorldTicks(){return active() || !pendingEnergy.isEmpty();}
-    public void invalidate(){indexed=false;targets.clear();if(!active())bindings.clear();}
+    public void invalidate(){
+        indexed=false;targets.clear();providerTargets.clear();dependents.clear();providerDependencies.clear();dirtyProviders.clear();
+        structureProviders.clear();normalProviders.clear();if(!active())bindings.clear();
+    }
+    public void invalidateProvider(BlockPos pos){if(indexed)dirtyProviders.add(pos.asLong());}
+    public void invalidate(BlockPos pos){
+        if(!indexed)return;
+        // Structural routes may span multiple hatches. Re-discover their real formed structure.
+        if(!structureProviders.isEmpty() || NativeMachines.gt() && GtMultiblockAdapter.supports(world.getBlockEntity(pos))){invalidate();return;}
+        dirtyProviders.add(pos.asLong());
+        for(var side:Direction.values())dirtyProviders.add(pos.relative(side).asLong());
+        dirtyProviders.addAll(dependents.getOrDefault(pos.asLong(),Set.of()));
+    }
     public List<ProcessingRuntime> runtimes(){return entries.values().stream().filter(Entry::occupies).map(e->e.runtime).toList();}
     public Optional<Target> target(IPatternDetails pattern) {
         if(pattern==null || pattern.getClass()!=appeng.crafting.pattern.AEProcessingPattern.class)return Optional.empty();
         if(revision!=FactoryRecipes.revision()){revision=FactoryRecipes.revision();invalidate();}
         if(!indexed)index();
+        else if(!dirtyProviders.isEmpty()){
+            var dirty=List.copyOf(dirtyProviders);dirtyProviders.clear();
+            for(long pos:dirty)indexProvider(BlockPos.of(pos));
+        }else indexHits++;
         return targets.getOrDefault(pattern.getDefinition(),List.of()).stream().findFirst();
     }
     public boolean supportsExact(IPatternDetails pattern){return target(pattern).map(t->processor(t).independentCopies()).orElse(false);}
+    private Optional<Target> target(BlockPos provider,IPatternDetails pattern) {
+        target(pattern);
+        return targets.getOrDefault(pattern.getDefinition(),List.of()).stream().filter(t->t.provider().equals(provider)).findFirst();
+    }
+    public CountedCraftingProvider normalProvider(BlockEntity block,IPatternDetails pattern) {
+        if(!(block instanceof PatternProviderBlockEntity provider) || !session.isOnline())return null;
+        var target=target(provider.getBlockPos(),pattern).orElse(null);
+        if(target==null || !((NativeWorldProvider)provider.getLogic()).machines$countedTarget(pattern,target.machine())
+                || !processor(target).independentCopies())return null;
+        if(!ExternalHandoffs.nativeHandoffActive(journal) && !ExternalHandoffs.supportsNativeOutput(session))return null;
+        return normalProviders.computeIfAbsent(provider.getBlockPos().asLong(),ignored->new NormalProvider(provider));
+    }
+    private final class NormalProvider implements CountedCraftingProvider {
+        private final PatternProviderBlockEntity provider;
+        NormalProvider(PatternProviderBlockEntity provider){this.provider=provider;}
+        @Override public CountedCraftingProvider handoffOwner(){return this;}
+        @Override public ServerLevel handoffLevel(){return (ServerLevel)session.host().getLevel();}
+        @Override public FactoryJournal handoffJournal(){return journal;}
+        @Override public Set<BlockEntity> recoveryParticipants(){return NativeWorldCheckpoint.outputParticipants(session.host(),world);}
+        @Override public boolean nativeWorldHandoff(){return true;}
+        @Override public List<IPatternDetails> getAvailablePatterns(){return provider.getLogic().getAvailablePatterns();}
+        @Override public int getPatternPriority(){return provider.getLogic().getPriority();}
+        @Override public boolean isBusy(){return provider.isRemoved() || !session.isOnline() || !provider.getMainNode().isActive() || provider.getLogic().isBusy();}
+        @Override public boolean pushPattern(IPatternDetails pattern,KeyCounter[] holders){return pushPatterns(pattern,holders,1);}
+        @Override public int normalBatchLimit(IPatternDetails pattern,int limit) {
+            if(limit<=0 || isBusy())return 0;
+            var t=target(provider.getBlockPos(),pattern).orElse(null);if(t==null)return 0;
+            if(!((NativeWorldProvider)provider.getLogic()).machines$countedTarget(pattern,t.machine()))return 0;
+            var old=occupiedMachines.get(t.machine().asLong());
+            if(old!=null && (!old.normal || !old.target.provider().equals(t.provider()) || !old.target.pattern().getDefinition().equals(pattern.getDefinition())))return 0;
+            if(old==null && (!idle(t) || busy(t.machine())))return 0;
+            var room=old==null?session.runtime().lanes().multiply(session.runtime().speed().divide(t.profile().recipe().duration()).max(BigInteger.ONE))
+                    :old.runtime.appendRoom(t.profile().recipe());
+            return room.min(BigInteger.valueOf(limit)).intValueExact();
+        }
+        @Override public boolean pushPatterns(IPatternDetails pattern,KeyCounter[] holders,int executions) {
+            if(executions<=0 || normalBatchLimit(pattern,executions)!=executions)return false;
+            var t=target(provider.getBlockPos(),pattern).orElseThrow();var recipe=t.profile().recipe();
+            var count=BigInteger.valueOf(executions);var provided=new LinkedHashMap<AEKey,BigInteger>();
+            for(var holder:holders)for(var input:holder)provided.merge(input.getKey(),BigInteger.valueOf(input.getLongValue()),BigInteger::add);
+            if(!provided.equals(ExactAmounts.multiply(recipe.inputs(),count)))return false;
+            var old=occupiedMachines.get(t.machine().asLong());
+            if(old!=null) {
+                boolean[] accepted={false};journal.atomic(()->{
+                    accepted[0]=old.runtime.appendLocal(old.id,recipe,count,provided);
+                    if(accepted[0])save();
+                });
+                if(!accepted[0])return false;
+            } else {
+                var e=new Entry(UUID.randomUUID(),"ae2-normal",t,false,"");e.normal=true;
+                journal.atomic(()->{
+                    entries.put(e.id,e);occupy(e);
+                    require(e.runtime.accept(e.id,e.digest,pattern,count,provided,ExactAmounts.multiply(recipe.outputs(),count)),"NATIVE_NORMAL_ADMISSION_CHANGED");
+                    save();
+                });
+            }
+            for(var holder:holders)holder.clear();return true;
+        }
+    }
     public int preparedRecipeCount(){return bindings.size();}
     private NativeBatchProcessor processor(Target target) {
         var key=new Binding(target.machine().asLong(),target.pattern().getDefinition(),revision);
@@ -117,12 +215,35 @@ public final class NativeWorldBatches {
         return n.longValueExact();
     }
     private void index() {
-        targets.clear();
-        var structures=new HashMap<BlockPos,List<BlockEntity>>();
+        targets.clear();providerTargets.clear();dependents.clear();providerDependencies.clear();structureProviders.clear();dirtyProviders.clear();indexBuilds++;
         if(NativeMachines.gt())for(var machine:session.nativeBlocks())if(GtMultiblockAdapter.supports(machine))
-            for(var provider:GtMultiblockAdapter.worldProviders(machine))structures.computeIfAbsent(provider,ignored->new ArrayList<>()).add(machine);
+            for(var provider:GtMultiblockAdapter.worldProviders(machine))structureProviders.computeIfAbsent(provider,ignored->new ArrayList<>()).add(machine);
         for(var block:session.nativeBlocks())if(block.getClass()==PatternProviderBlockEntity.class) {
-            var provider=(PatternProviderBlockEntity)block;
+            indexProvider(block.getBlockPos());
+        }
+        indexed=true;
+    }
+    private void indexProvider(BlockPos pos){
+        long id=pos.asLong();
+        var previous=providerTargets.remove(id);
+        if(previous!=null)for(var target:previous){
+            var list=targets.get(target.pattern().getDefinition());
+            if(list!=null){list.remove(target);if(list.isEmpty())targets.remove(target.pattern().getDefinition());}
+            bindings.remove(new Binding(target.machine().asLong(),target.pattern().getDefinition(),revision));
+        }
+        var oldDependencies=providerDependencies.remove(id);
+        if(oldDependencies!=null)for(long dependency:oldDependencies){
+            var ids=dependents.get(dependency);ids.remove(id);if(ids.isEmpty())dependents.remove(dependency);
+        }
+        normalProviders.remove(id);
+        var block=world.getBlockEntity(pos);
+        if(block==null || block.isRemoved() || block.getClass()!=PatternProviderBlockEntity.class)return;
+        providerBuilds++;
+        var provider=(PatternProviderBlockEntity)block;
+        var found=new ArrayList<Target>();
+        providerTargets.put(id,found);
+        depend(id,id);
+        for(var side:Direction.values())depend(id,pos.relative(side).asLong());
             for(var pattern:provider.getLogic().getAvailablePatterns()) {
                 if(pattern.getClass()!=appeng.crafting.pattern.AEProcessingPattern.class)continue;
                 final Map<AEKey,BigInteger> in,out;
@@ -131,7 +252,7 @@ public final class NativeWorldBatches {
                 for(var side:provider.getTargets()) {
                     var adjacent=world.getBlockEntity(provider.getBlockPos().relative(side));if(adjacent!=null)machines.add(adjacent);
                 }
-                machines.addAll(structures.getOrDefault(provider.getBlockPos(),List.of()));
+                machines.addAll(structureProviders.getOrDefault(provider.getBlockPos(),List.of()));
                 for(var machine:machines) {
                     if(!NativeWorldMachine.supports(machine))continue;
                     boolean multi=NativeMachines.multiblock(machine);
@@ -141,11 +262,15 @@ public final class NativeWorldBatches {
                     if(profile==null || !profile.recipe().inputs().equals(in) || !profile.recipe().outputs().equals(out))continue;
                     var delta=provider.getBlockPos().subtract(machine.getBlockPos());
                     try{NativeWorldMachine.verifyRoute(machine,Direction.getNearest(delta.getX(),delta.getY(),delta.getZ()),profile);}catch(IllegalArgumentException unsupported){continue;}
-                    targets.computeIfAbsent(pattern.getDefinition(),ignored->new ArrayList<>()).add(new Target(provider.getBlockPos(),machine.getBlockPos(),pattern,profile));
+                    var target=new Target(provider.getBlockPos(),machine.getBlockPos(),pattern,profile);
+                    targets.computeIfAbsent(pattern.getDefinition(),ignored->new ArrayList<>()).add(target);found.add(target);
+                    for(var member:NativeWorldMachine.members(machine))depend(id,member.asLong());
                 }
             }
-        }
-        indexed=true;
+    }
+    private void depend(long provider,long position){
+        dependents.computeIfAbsent(position,ignored->new HashSet<>()).add(provider);
+        providerDependencies.computeIfAbsent(provider,ignored->new HashSet<>()).add(position);
     }
     private Target resolveSaved(CompoundTag tag,IPatternDetails pattern) {
         var provider=BlockPos.of(tag.getLong("provider"));var machine=BlockPos.of(tag.getLong("machine"));
@@ -200,7 +325,7 @@ public final class NativeWorldBatches {
     public boolean acknowledge(UUID id,String digest){var e=entries.get(id);if(e==null){var t=terminal.get(id);return t!=null && t.runtime().acknowledge(id,digest);}if(!e.runtime.acknowledge(id,digest))return false;complete(e);return true;}
     public boolean forget(UUID id,String digest){var t=terminal.get(id);if(t==null || !t.runtime().forget(id,digest))return false;t.tag().put("runtime",RuntimeCodec.write(t.runtime(),key->PlatformData.saveKey(key,world)));save();return true;}
     public boolean cancel(UUID id,String digest){var e=entries.get(id);if(e==null){var t=terminal.get(id);return t!=null && t.runtime().cancel(id,digest);}if(!e.runtime.cancel(id,digest))return false;complete(e);return true;}
-    private void complete(Entry e){var tag=e.save();tag.remove("native");terminal.put(e.id,new Terminal(tag,readRuntime(tag)));entries.remove(e.id);release(e);if(e.runtime.energy().stored().signum()>0)pendingEnergy.add(e.id);returnEnergy();save();}
+    private void complete(Entry e){var tag=e.save();tag.remove("native");terminal.put(e.id,new Terminal(tag,readRuntime(tag)));entries.remove(e.id);release(e);if(e.runtime.energy().stored().signum()>0)pendingEnergy.add(e.id);else if(e.normal)terminal.remove(e.id);returnEnergy();save();}
     /** Return only unspent payment rounding, never recipe energy or a multiplied native charge. */
     private void returnEnergy() {
         for(var id:List.copyOf(pendingEnergy)) {
@@ -212,7 +337,7 @@ public final class NativeWorldBatches {
                 t.runtime().energy().consume(n);NativeWorldMachine.energy(machine,charge.add(n));machine.setChanged();
                 t.tag().put("runtime",RuntimeCodec.write(t.runtime(),key->PlatformData.saveKey(key,world)));save();
             });
-            if(t.runtime().energy().stored().signum()==0)pendingEnergy.remove(id);
+            if(t.runtime().energy().stored().signum()==0){pendingEnergy.remove(id);if(t.tag().getBoolean("normal"))terminal.remove(id);}
         }
     }
     public void sourceAcknowledged(UUID id){var e=entries.get(id);if(e!=null && e.v2 && !e.sourceAcknowledged){e.sourceAcknowledged=true;save();}}
@@ -222,14 +347,15 @@ public final class NativeWorldBatches {
     }
     public BigInteger receiveExactFE(BigInteger offered,long tick,boolean simulate) {
         ExactAmounts.nonnegative(offered);var left=offered;
+        final long frame=workTick();
         for(var e:entries.values())if(e.occupies() && e.sourceAcknowledged && !e.runtime.quarantined()) {
             if(e.target.profile().energyUnit().equals(MachineProfile.GT_UNIT))continue;
             var units=e.target.profile().unitsPerFE();
             var quantum=units.divide(units.gcd(e.target.profile().nativeQuantum())).multiply(e.target.profile().nativeQuantum());
             var packet=quantum.divide(units);
-            var accepted=e.runtime.roundedEnergyDemand(tick,quantum).divide(units).min(left.divide(packet).multiply(packet));
+            var accepted=e.runtime.roundedEnergyDemand(frame,quantum).divide(units).min(left.divide(packet).multiply(packet));
             if(!simulate && accepted.signum()>0) {
-                var n=accepted.multiply(units);atomicNative(e,()->require(e.runtime.receiveRoundedEnergy(n,tick,quantum,false).equals(n),"NATIVE_EXACT_POWER_CHANGED"));
+                var n=accepted.multiply(units);atomicNative(e,()->require(e.runtime.receiveRoundedEnergy(n,frame,quantum,false).equals(n),"NATIVE_EXACT_POWER_CHANGED"));
             }
             left=left.subtract(accepted);if(left.signum()==0)break;
         }
@@ -238,12 +364,13 @@ public final class NativeWorldBatches {
     /** Exact EU is still paid in whole native-voltage packets, never by an assumed FE conversion. */
     public BigInteger receiveExactEU(long voltage,BigInteger offered,long tick,boolean simulate) {
         ExactAmounts.nonnegative(offered);if(voltage<=0)return BigInteger.ZERO;
+        final long frame=workTick();
         var packet=BigInteger.valueOf(voltage);var left=offered;
         for(var e:entries.values())if(e.occupies() && e.sourceAcknowledged && !e.runtime.quarantined()) {
             var p=e.target.profile();
             if(!p.energyUnit().equals(MachineProfile.GT_UNIT) || voltage>p.voltage() || packet.compareTo(p.recipe().minimumVoltage())<0)continue;
-            var n=e.runtime.roundedEnergyDemand(tick,packet).min(left.divide(packet).multiply(packet));
-            if(!simulate && n.signum()>0)atomicNative(e,()->require(e.runtime.receiveRoundedEnergy(n,tick,packet,false).equals(n),"NATIVE_EXACT_EU_CHANGED"));
+            var n=e.runtime.roundedEnergyDemand(frame,packet).min(left.divide(packet).multiply(packet));
+            if(!simulate && n.signum()>0)atomicNative(e,()->require(e.runtime.receiveRoundedEnergy(n,frame,packet,false).equals(n),"NATIVE_EXACT_EU_CHANGED"));
             left=left.subtract(n);if(left.signum()==0)break;
         }
         return offered.subtract(left);
@@ -251,14 +378,14 @@ public final class NativeWorldBatches {
     public long voltageEU(){return entries.values().stream().filter(Entry::occupies).filter(e->e.target.profile().energyUnit().equals(MachineProfile.GT_UNIT)).mapToLong(e->e.target.profile().voltage()).max().orElse(0);}
     public long demandEU(long tick){
         var total=BigInteger.ZERO;
-        for(var e:entries.values())if(e.occupies() && e.sourceAcknowledged && !e.runtime.quarantined() && e.target.profile().energyUnit().equals(MachineProfile.GT_UNIT))total=total.add(e.runtime.energyDemand(tick));
+        for(var e:entries.values())if(e.occupies() && e.sourceAcknowledged && !e.runtime.quarantined() && e.target.profile().energyUnit().equals(MachineProfile.GT_UNIT))total=total.add(e.runtime.energyDemand(workTick()));
         // This is the existing long capability's display of demand, not a job/accounting value.
         return total.min(BigInteger.valueOf(Long.MAX_VALUE)).longValueExact();
     }
     public void tick() {
         if(!session.isOnline())return;
         if(!pendingEnergy.isEmpty())returnEnergy();
-        long tick=world.getGameTime();
+        long tick=workTick();
         for(var e:List.copyOf(entries.values()))if(e.occupies() && e.sourceAcknowledged && !e.runtime.quarantined()) {
             var machine=world.getBlockEntity(e.target.machine());
             var draw=NativeWorldMachine.energy(machine).min(e.runtime.energyDemand(tick));
@@ -266,7 +393,7 @@ public final class NativeWorldBatches {
                 if(draw.signum()>0){NativeWorldMachine.energy(machine,NativeWorldMachine.energy(machine).subtract(draw));e.runtime.receiveEnergy(draw,tick,false);}
                 e.runtime.tick(tick);
             });
-            if(e.v2 && e.job().state()==BatchJob.State.OUTPUT_READY && e.runtime.deliveryReady(e.id))deliver(e);
+            if((e.v2 || e.normal) && e.job().state()==BatchJob.State.OUTPUT_READY && e.runtime.deliveryReady(e.id))deliver(e);
         }
     }
     private void atomicNative(Entry e,Runnable action) {
@@ -339,7 +466,7 @@ public final class NativeWorldBatches {
     }
     private final class Entry {
         final UUID id;final String digest;final Target target;final boolean v2;final String fingerprint;
-        final ProcessingRuntime runtime;boolean sourceAcknowledged=true,deliveryIntent;
+        final ProcessingRuntime runtime;boolean sourceAcknowledged=true,deliveryIntent,normal;
         NativeBatchProcessor executor;
         NativeCompletion completion;
         final Set<BlockPos> members;
@@ -355,10 +482,10 @@ public final class NativeWorldBatches {
             this.id=tag.getUUID("id");this.digest=tag.getString("digest");this.target=target;this.v2=tag.getBoolean("v2");this.fingerprint=tag.getString("fingerprint");
             members=NativeWorldMachine.members(world.getBlockEntity(target.machine()));
             completion=NativeWorldMachine.completion(world.getBlockEntity(target.machine()),tag.getCompound("nativeCompletion"));
-            sourceAcknowledged=tag.getBoolean("sourceAcknowledged");deliveryIntent=tag.getBoolean("deliveryIntent");
+            sourceAcknowledged=tag.getBoolean("sourceAcknowledged");deliveryIntent=tag.getBoolean("deliveryIntent");normal=tag.getBoolean("normal");
             runtime=RuntimeCodec.read(tag.getCompound("runtime"),key->PlatformData.loadKey(key,world),ignored->NativeWorldBatches.this.save());
             delivered.putAll(RuntimeCodec.readAmounts(tag.getList("delivered",Tag.TAG_COMPOUND),key->PlatformData.loadKey(key,world)));
-            bind(true);runtime.rebaseRecoveredTime(world.getGameTime());
+            bind(true);runtime.rebaseRecoveredTime(workTick());
             if(deliveryIntent)runtime.restoreQuarantine(true);
         }
         void bind(boolean restored) {
@@ -375,7 +502,7 @@ public final class NativeWorldBatches {
         BatchJob<AEKey> job(){return runtime.find(id,digest).orElseThrow();}
         boolean occupies(){return runtime.find(id,digest).map(j->j.state()==BatchJob.State.RUNNING || j.state()==BatchJob.State.OUTPUT_READY || j.state()==BatchJob.State.QUARANTINED).orElse(false);}
         CompoundTag save() {
-            var tag=new CompoundTag();tag.putUUID("id",id);tag.putString("digest",digest);tag.putBoolean("v2",v2);tag.putString("fingerprint",fingerprint);
+            var tag=new CompoundTag();tag.putUUID("id",id);tag.putString("digest",digest);tag.putBoolean("v2",v2);tag.putBoolean("normal",normal);tag.putString("fingerprint",fingerprint);
             tag.putLong("provider",target.provider().asLong());tag.putLong("machine",target.machine().asLong());
             tag.put("pattern",PlatformData.saveItem(target.pattern().getDefinition().toStack(),world));
             tag.put("runtime",RuntimeCodec.write(runtime,key->PlatformData.saveKey(key,world)));

@@ -156,9 +156,44 @@ tasks.register('createMixinMappings') {
 }
 tasks.named('compileJava', JavaCompile) {
     dependsOn 'createMixinMappings'
+    outputs.file('build/mixinMappings/shadows.srg')
     options.compilerArgs += ['-AreobfSrgFile=' + file('build/mixinMappings/output.srg').absolutePath,
+                            '-AoutSrgFile=' + file('build/mixinMappings/shadows.srg').absolutePath,
                             '-AoutRefMapFile=' + file('build/classes/java/main/ae2machines.refmap.json').absolutePath]
 }
+tasks.matching { it.name == 'reobfJar' }.configureEach {
+    extraMappings.from(file('build/mixinMappings/shadows.srg'))
+}
+
+tasks.register('verifyReobfuscatedShadows') {
+    dependsOn 'reobfJar'
+    doLast {
+        def mappings = file('build/mixinMappings/shadows.srg')
+        if (!mappings.isFile()) throw new GradleException('Mixin shadow mappings were not emitted')
+        def fields = mappings.readLines().findAll { it.startsWith('FD: ') }
+        if (fields.isEmpty()) throw new GradleException('Expected remapped vanilla shadow fields')
+        def javap = javaToolchains.launcherFor(java.toolchain).get().metadata.installationPath
+                .file('bin/javap' + (System.getProperty('os.name').startsWith('Windows') ? '.exe' : '')).asFile
+        def inspected = [:]
+        fields.each { line ->
+            def mapped = line.split(' ')[2]
+            def split = mapped.lastIndexOf('/')
+            def owner = mapped.substring(0, split)
+            def name = mapped.substring(split + 1)
+            if (!inspected.containsKey(owner)) {
+                def output = new ByteArrayOutputStream()
+                exec {
+                    commandLine javap, '-p', '-classpath', tasks.jar.archiveFile.get().asFile, owner.replace('/', '.')
+                    standardOutput = output
+                }
+                inspected[owner] = output.toString('UTF-8')
+            }
+            if (!inspected[owner].contains(' ' + name + ';')) throw new GradleException("Unmapped packaged shadow: ${mapped}")
+        }
+        logger.lifecycle('Verified {} packaged Mixin shadow fields', fields.size())
+    }
+}
+tasks.named('check') { dependsOn 'verifyReobfuscatedShadows' }
 tasks.named('jar') {
     manifest.attributes('MixinConfigs': 'ae2machines.mixins.json')
     from rootProject.file('assets-reference/LICENSE_ASSETS.txt')

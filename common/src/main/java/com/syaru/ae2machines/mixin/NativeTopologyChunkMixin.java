@@ -9,8 +9,15 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /** Direct chunk edits and load/unload must invalidate the same index as Level edits. */
 @Mixin(LevelChunk.class)
 public abstract class NativeTopologyChunkMixin {
-    @Inject(method={"setBlockEntity","removeBlockEntity","clearAllBlockEntities","setLoaded"},at=@At("RETURN"))
+    @Inject(method="setBlockEntity",at=@At("RETURN"))
+    private void machines$added(net.minecraft.world.level.block.entity.BlockEntity block,CallbackInfo ci){machines$changed(block.getBlockPos());}
+    @Inject(method="removeBlockEntity",at=@At("RETURN"))
+    private void machines$removed(net.minecraft.core.BlockPos pos,CallbackInfo ci){machines$changed(pos);}
+    private void machines$changed(net.minecraft.core.BlockPos pos){
+        if(((LevelChunk)(Object)this).getLevel() instanceof ServerLevel level && NativeWorldRuntime.owns(level))NativeWorldRuntime.get(level).invalidateEquipment(pos);
+    }
+    @Inject(method={"clearAllBlockEntities","setLoaded"},at=@At("RETURN"))
     private void machines$topologyChanged(CallbackInfo ci){
-        if(((LevelChunk)(Object)this).getLevel() instanceof ServerLevel level && NativeWorldRuntime.owns(level))NativeWorldRuntime.get(level).invalidateTemporal();
+        if(((LevelChunk)(Object)this).getLevel() instanceof ServerLevel level && NativeWorldRuntime.owns(level))NativeWorldRuntime.get(level).invalidateEquipment();
     }
 }

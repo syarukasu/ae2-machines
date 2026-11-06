@@ -8,7 +8,7 @@ import appeng.crafting.execution.*;
 import appeng.crafting.inv.ICraftingInventory;
 import appeng.me.cluster.implementations.CraftingCPUCluster;
 import appeng.me.service.CraftingService;
-import com.syaru.ae2machines.runtime.FactorySession;
+import com.syaru.ae2machines.runtime.CountedCraftingProvider;
 import com.syaru.ae2machines.runtime.FixedBatchPattern;
 import com.syaru.ae2machines.world.ExternalHandoffs;
 import net.minecraft.nbt.CompoundTag;
@@ -29,7 +29,7 @@ public abstract class CraftingCpuHandoffMixin {
     @Unique private boolean machines$ticking;
     @Unique private FixedBatchPattern machines$batch;
     @Unique private TaskProgressAccess machines$task;
-    @Unique private Set<FactorySession> machines$receivers=Set.of();
+    @Unique private Set<CountedCraftingProvider> machines$receivers=Set.of();
     @Unique private int machines$share,machines$completed,machines$extra;
     @Unique private boolean machines$scaled;
 
@@ -58,9 +58,10 @@ public abstract class CraftingCpuHandoffMixin {
         machines$share=0;machines$receivers=Set.of();
         int limit=machines$remaining(pattern,maxPatterns);
         if(limit>=2) {
-            var receivers=new LinkedHashSet<FactorySession>();int room=limit;boolean supported=true;
+            var receivers=new LinkedHashSet<CountedCraftingProvider>();int room=limit;boolean supported=true;
             for(var provider:service.getProviders(pattern)) {
-                if(!(provider instanceof FactorySession factory)){supported=false;break;}
+                var factory=CountedCraftingProvider.resolve(provider,pattern);
+                if(factory==null){supported=false;break;}
                 if(factory.isBusy())continue;
                 int capacity=factory.normalBatchLimit(pattern,limit);
                 if(capacity<2){supported=false;break;}
@@ -70,7 +71,7 @@ public abstract class CraftingCpuHandoffMixin {
             var available=supported && !receivers.isEmpty()?FixedBatchPattern.offer(pattern,limit,inventory,energy,cpu::getWaitingFor):null;
             if(available!=null) {
                 int share=Math.min(room,available.count()/receivers.size());
-                if(share>=2 && receivers.stream().map(FactorySession::handoffOwner).distinct().allMatch(ExternalHandoffs::supports)) {
+                if(share>=2 && receivers.stream().map(CountedCraftingProvider::handoffOwner).distinct().allMatch(ExternalHandoffs::supports)) {
                     machines$share=share;machines$receivers=receivers;
                 }
             }
@@ -96,7 +97,8 @@ public abstract class CraftingCpuHandoffMixin {
         // Continue only across providers protected by the same complete CPU/factory before-image.
         boolean sameOwner=machines$pending!=null,hasFactory=false;
         for(var provider:service.getProviders(pattern)) {
-            if(provider instanceof FactorySession factory) {
+            var factory=CountedCraftingProvider.resolve(provider,pattern);
+            if(factory!=null) {
                 hasFactory=true;
                 if(machines$pending!=null && !machines$pending.owns(factory))sameOwner=false;
             } else sameOwner=false;
@@ -108,7 +110,8 @@ public abstract class CraftingCpuHandoffMixin {
     }
     @Redirect(method="executeCrafting",at=@At(value="INVOKE",target="Lappeng/api/networking/crafting/ICraftingProvider;pushPattern(Lappeng/api/crafting/IPatternDetails;[Lappeng/api/stacks/KeyCounter;)Z"),require=1)
     private boolean machines$push(ICraftingProvider provider,IPatternDetails pattern,KeyCounter[] holders) {
-        if(!(provider instanceof FactorySession factory)) {
+        var factory=CountedCraftingProvider.resolve(provider,pattern);
+        if(factory==null) {
             if(machines$pending!=null)throw new ExternalHandoffs.PersistenceFailure(new IllegalStateException("Provider changed during CPU batch"));
             boolean accepted=provider.pushPattern(pattern,holders);if(accepted)machines$completed++;
             return accepted;
@@ -126,6 +129,7 @@ public abstract class CraftingCpuHandoffMixin {
             for(var holder:holders)holder.clear();
             throw failure;
         }
+        if(factory.nativeWorldHandoff() && transaction==null)return false;
         try {
             boolean accepted=machines$accept(factory,pattern,holders);
             if(transaction!=null) {
@@ -137,7 +141,7 @@ public abstract class CraftingCpuHandoffMixin {
             throw failure;
         }
     }
-    @Unique private boolean machines$accept(FactorySession factory,IPatternDetails pattern,KeyCounter[] holders) {
+    @Unique private boolean machines$accept(CountedCraftingProvider factory,IPatternDetails pattern,KeyCounter[] holders) {
         if(machines$batch==null) {
             boolean accepted=factory.pushPattern(pattern,holders);if(accepted)machines$completed++;
             return accepted;

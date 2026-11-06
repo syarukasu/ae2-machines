@@ -2,7 +2,6 @@ package com.syaru.ae2machines.compat.mek;
 
 import com.syaru.ae2machines.mixin.*;
 import com.syaru.ae2machines.platform.MekTimeClock;
-import com.syaru.ae2machines.world.NativeQuietStep;
 import java.util.*;
 import java.util.function.*;
 import mekanism.common.lib.frequency.FrequencyType;
@@ -29,9 +28,61 @@ public final class MekThermalShells {
         "mekanism.generators.common.tile.fission.TileEntityFissionReactorPort","mekanism.generators.common.tile.turbine.TileEntityTurbineValve",
         "mekanism.common.tile.transmitter.TileEntityPressurizedTube","mekanism.common.tile.transmitter.TileEntityMechanicalPipe",
         "mekanism.common.tile.transmitter.TileEntityUniversalCable","mekanism.common.tile.multiblock.TileEntitySuperheatingElement");
-    public record Shell(BlockEntity owner,NativeQuietStep clock,List<?> heat,BooleanSupplier quiet,Supplier<NativeQuietStep> reset,Object group,BooleanSupplier driver){}
+    // These native ticks are retained, not folded. Their IO does not observe another tile's
+    // housekeeping clock. Unknown owners or injected observers still reject the interval.
+    private static final Set<String> NATIVE_WORK=Set.of(
+        "mekanism.common.tile.machine.TileEntityChemicalInfuser",
+        "mekanism.common.tile.machine.TileEntityChemicalOxidizer",
+        "mekanism.common.tile.machine.TileEntityElectricPump",
+        "mekanism.common.tile.machine.TileEntitySolarNeutronActivator",
+        "mekanism.common.tile.machine.TileEntityRotaryCondensentrator",
+        "mekanism.common.tile.machine.TileEntityIsotopicCentrifuge",
+        "mekanism.common.tile.machine.TileEntityEnrichmentChamber",
+        "mekanism.common.tile.machine.TileEntityEnergizedSmelter",
+        "mekanism.common.tile.machine.TileEntityElectrolyticSeparator",
+        "mekanism.common.tile.machine.TileEntityChemicalDissolutionChamber",
+        "mekanism.common.tile.machine.TileEntityChemicalCrystallizer",
+        "mekanism.common.tile.TileEntityFluidTank",
+        "mekanism.common.tile.TileEntityChemicalTank",
+        "mekanism.common.tile.TileEntityEnergyCube",
+        "mekanism.common.tile.TileEntityBoundingBlock",
+        "mekanism.common.tile.multiblock.TileEntitySPSCasing",
+        "mekanism.common.tile.multiblock.TileEntitySPSPort",
+        "mekanism.common.tile.multiblock.TileEntitySuperchargedCoil");
+    public record Shell(BlockEntity owner,int offered,List<?> heat,BooleanSupplier quiet,Object group,BooleanSupplier driver){
+        public int clockLimit(){
+            if(!(owner instanceof TileEntityMekanism m))return offered;
+            int delay=((MekTimeBaseAccess)m).machines$timeDelay();
+            return delay>0?Math.min(offered,delay-1):offered;
+        }
+        public void advance(int ticks,long through){
+            if(owner instanceof TileEntityMekanism m)MekTimeClock.advanceShell(m,ticks,through);
+        }
+    }
     private MekThermalShells(){}
-    public static boolean known(BlockEntity be){return SHELLS.contains(be.getClass().getName()) || ACTIVE.contains(be.getClass().getName());}
+    private static final String FISSION_CASING="mekanism.generators.common.tile.fission.TileEntityFissionReactorCasing";
+    private enum Role { UNKNOWN, ACTIVE, SHELL, FISSION, VENT, HEATER, PIPE }
+    private static final ClassValue<Role> ROLES=new ClassValue<>(){
+        @Override protected Role computeValue(Class<?> type){
+            String name=type.getName();
+            if(FISSION_CASING.equals(name))return Role.FISSION;
+            if(name.equals("mekanism.generators.common.tile.turbine.TileEntityTurbineVent"))return Role.VENT;
+            if(name.equals("mekanism.common.tile.multiblock.TileEntitySuperheatingElement"))return Role.HEATER;
+            if(type==mekanism.common.tile.transmitter.TileEntityPressurizedTube.class
+                    || type==mekanism.common.tile.transmitter.TileEntityMechanicalPipe.class
+                    || type==mekanism.common.tile.transmitter.TileEntityUniversalCable.class)return Role.PIPE;
+            return SHELLS.contains(name)?Role.SHELL:ACTIVE.contains(name)?Role.ACTIVE:Role.UNKNOWN;
+        }
+    };
+    // Cache the native method, never the answer: sound eligibility belongs to the live owner.
+    private static final ClassValue<Optional<java.lang.reflect.Method>> SOUND=new ClassValue<>(){
+        @Override protected Optional<java.lang.reflect.Method> computeValue(Class<?> type){
+            try{return Optional.of(type.getMethod("handlesSound",Class.forName(FISSION_CASING,false,type.getClassLoader())));}
+            catch(ReflectiveOperationException unavailable){return Optional.empty();}
+        }
+    };
+    public static boolean known(BlockEntity be){return ROLES.get(be.getClass())!=Role.UNKNOWN;}
+    public static boolean nativeWork(BlockEntity be){return NATIVE_WORK.contains(be.getClass().getName());}
     public static boolean data(MultiblockData d){return d!=null && DATA.contains(d.getClass().getName()) && d.isFormed() && !d.recheckStructure;}
     public static boolean bounded(MultiblockData d,int ticks){
         if(!data(d))return false;
@@ -55,9 +106,10 @@ public final class MekThermalShells {
     }
     public static Shell plan(BlockEntity raw,int count){
         boolean circuit=com.syaru.ae2machines.world.NativeCircuitOptions.ENABLED;
-        boolean heater=circuit && raw.getClass().getName().equals("mekanism.common.tile.multiblock.TileEntitySuperheatingElement");
-        boolean fission=circuit && raw.getClass().getName().equals("mekanism.generators.common.tile.fission.TileEntityFissionReactorCasing");
-        if(circuit && (raw.getClass()==mekanism.common.tile.transmitter.TileEntityPressurizedTube.class || raw.getClass()==mekanism.common.tile.transmitter.TileEntityMechanicalPipe.class)){
+        var role=ROLES.get(raw.getClass());
+        boolean heater=circuit && role==Role.HEATER;
+        boolean fission=circuit && role==Role.FISSION;
+        if(circuit && role==Role.PIPE){
             var tile=(mekanism.common.tile.transmitter.TileEntityTransmitter)raw;
             if(raw.isRemoved() || !tile.getTransmitter().hasTransmitterNetwork() || !MekThermalHooks.safe(tile.getTransmitter().getClass()))return null;
             BooleanSupplier quiet=()->{
@@ -67,10 +119,9 @@ public final class MekThermalShells {
             };
             if(!quiet.getAsBoolean())return null;
             // Native transmitters use their own ticker, which does not advance the Mek tile clock.
-            Supplier<NativeQuietStep> reset=()->new NativeQuietStep(count,n->{},()->{});
-            return new Shell(raw,reset.get(),List.of(),quiet,reset,tile.getTransmitter().getTransmitterNetwork(),()->false);
+            return new Shell(raw,count,List.of(),quiet,tile.getTransmitter().getTransmitterNetwork(),()->false);
         }
-        if((!SHELLS.contains(raw.getClass().getName()) && !heater) || raw.isRemoved())return null;
+        if((role!=Role.SHELL && role!=Role.FISSION && role!=Role.VENT && !heater) || raw.isRemoved())return null;
         var m=(TileEntityMekanism)raw;
         // No frequency, comparator, upgrade, redstone or activation event can be hidden here.
         var f=m.getFrequencyComponent();var flags=(MekThermalFrequencyAccess)f;
@@ -82,9 +133,11 @@ public final class MekThermalShells {
             owner=tile.getMultiblock();var state=(MekThermalTileAccess)tile;
             if(tile.isMaster() || !data(owner) || !state.machines$thermalFormed() || state.machines$thermalId()!=owner.inventoryID
                     || !stable(tile.getStructure(),m.getLevel().getGameTime()))return null;
-            if(raw.getClass().getName().contains("FissionReactorCasing")){
+            if(role==Role.FISSION){
                 try{
-                    boolean soundEnabled=(boolean)owner.getClass().getMethod("handlesSound",m.getClass()).invoke(owner,m);
+                    var method=SOUND.get(owner.getClass()).orElse(null);
+                    if(method==null)return null;
+                    boolean soundEnabled=(boolean)method.invoke(owner,m);
                     if(soundEnabled && !circuit)return null;
                     if(fission){
                         var data=(MekThermalFissionDataAccess)owner;var sound=(MekThermalFissionTileAccess)m;
@@ -95,7 +148,7 @@ public final class MekThermalShells {
                 }
                 catch(ReflectiveOperationException changed){return null;}
             }
-            if(raw.getClass().getName().endsWith("TurbineVent"))for(var side:Direction.values()){
+            if(role==Role.VENT)for(var side:Direction.values()){
                 var pos=m.getBlockPos().relative(side);
                 if(!com.syaru.ae2machines.world.NativeRegionMove.contains(pos,owner.getMinPos(),owner.getMaxPos())){
                     var outside=m.getLevel().getBlockState(pos);
@@ -117,7 +170,7 @@ public final class MekThermalShells {
             }
             if(owner==null || !MekTimeClock.glassStable(tile,active))return null;
         }else return null;
-        var clock=MekTimeClock.plan(m,count);if(quiet==null && clock.limit()<count)return null;
-        return new Shell(m,clock,List.copyOf(m.getHeatCapacitors(null)),quiet,()->MekTimeClock.plan(m,count),owner,driver);
+        var shell=new Shell(m,count,List.copyOf(m.getHeatCapacitors(null)),quiet,owner,driver);
+        return quiet==null && shell.clockLimit()<count?null:shell;
     }
 }

@@ -5,7 +5,7 @@ import net.minecraft.world.level.storage.DerivedLevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.minecraft.world.level.storage.WorldData;
 
-/** Both direct LevelData readers and Level getters see the same persisted clock. */
+/** World services and scheduled block/fluid events retain the unscaled world clock. */
 public final class NativeWorldLevelData extends DerivedLevelData {
     private final NativeWorldState state;
     public NativeWorldLevelData(WorldData world, ServerLevelData wrapped, NativeWorldState state) {

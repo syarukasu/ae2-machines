@@ -20,7 +20,7 @@ import java.util.*;
 import static com.syaru.ae2machines.world.NativeFactoryCompiler.require;
 
 /** One real AE2 node per captured provider, never one per quantum lane. */
-public class FactorySession implements ICraftingProvider,IActionHost,FactoryHandle {
+public class FactorySession implements CountedCraftingProvider,IActionHost,FactoryHandle {
     protected final BaseAccelerator host;
     private final ServerLevel level;
     private final FactoryJournal journal;
