@@ -35,6 +35,11 @@ final class NativeThermalBatch implements AutoCloseable {
             else nativeSlots.add(slot);
         }
         groups=List.copyOf(byOwner.values());groups.forEach(NativeConditionalGroup::refresh);
+        for(var slot:nativeSlots){
+            var owner=world.getBlockEntity(slot.ticker.getPos());
+            if(owner instanceof mekanism.common.lib.multiblock.IMultiblock<?> tile)
+                slot.wakes=byOwner.get(tile.getMultiblock());
+        }
         schedule=new AbstractList<>(){
             @Override public TickingBlockEntity get(int index){return active.get(index);}
             @Override public int size(){return active.size();}
@@ -44,15 +49,22 @@ final class NativeThermalBatch implements AutoCloseable {
     private Iterator<TickingBlockEntity> filtered(){
         return new Iterator<>(){
             int cursor,lastPosition=-1,nextGroup;final int[] groupCursors=new int[groups.size()];
-            NativeConditionalGroup.Slot next,last;boolean prepared;
+            NativeConditionalGroup.Slot next,last,executed;boolean prepared,observed;
+            long observedRevision=Long.MIN_VALUE;
             @Override public boolean hasNext(){
                 if(prepared)return true;
                 while(cursor<nativeSlots.size() && nativeSlots.get(cursor).removed)cursor++;
                 next=cursor<nativeSlots.size()?nativeSlots.get(cursor):null;nextGroup=-1;
                 boolean valid=!closed && runtime.topologyRevision()==revision;
                 long now=world.getGameTime();
+                // Drivers are changed by their native multiblock master, not by sleeping shells.
+                if(!observed || observedRevision!=runtime.topologyRevision()){
+                    for(var group:groups)group.observe(now,valid);
+                    observed=true;observedRevision=runtime.topologyRevision();
+                }else if(executed!=null && executed.wakes!=null)executed.wakes.observe(now,valid);
+                executed=null;
                 for(int i=0;i<groups.size();i++){
-                    var group=groups.get(i);group.observe(now,valid);if(group.dormant)continue;
+                    var group=groups.get(i);if(group.dormant)continue;
                     int p=groupCursors[i];
                     if(p<group.members.size() && group.members.get(p).position<=lastPosition)p=group.after(lastPosition);
                     while(p<group.members.size() && group.members.get(p).removed)p++;
@@ -61,7 +73,7 @@ final class NativeThermalBatch implements AutoCloseable {
                 }
                 return prepared=next!=null;
             }
-            @Override public TickingBlockEntity next(){if(!hasNext())throw new NoSuchElementException();prepared=false;last=next;lastPosition=next.position;if(nextGroup<0)cursor++;else groupCursors[nextGroup]++;return next.ticker;}
+            @Override public TickingBlockEntity next(){if(!hasNext())throw new NoSuchElementException();prepared=false;last=next;executed=next;lastPosition=next.position;if(nextGroup<0)cursor++;else groupCursors[nextGroup]++;return next.ticker;}
             @Override public void remove(){if(last==null)throw new IllegalStateException();last.removed=true;if(last.ticker instanceof NativeConditionalTicker member)member.removed();last=null;}
         };
     }
@@ -105,8 +117,7 @@ final class NativeThermalBatch implements AutoCloseable {
         return build(world,session,count,layout,revision,original,false);
     }
     static NativeThermalBatch processing(ServerLevel world,NativeWorldSession session,int count,List<TickingBlockEntity> source){
-        if(!NativeThermalOptions.ENABLED || count<2 || session.batches().active()
-                || session.variable()!=null && session.variable().active())return null;
+        if(!NativeThermalOptions.ENABLED || count<2)return null;
         var runtime=NativeWorldRuntime.get(world);long revision=runtime.topologyRevision();
         var layout=runtime.thermalLayout(session);if(layout==null)return null;
         var boundary=layout.boundary(count);if(boundary!=null)return denied(world,boundary);
@@ -127,7 +138,8 @@ final class NativeThermalBatch implements AutoCloseable {
                 be=world.getBlockEntity(pos);
                 if(be!=null)return denied(world,"UNINDEXED_TICKER");
             }
-            var shell=be==null || !access.machines$thermalTicking(pos)?null:MekThermalShells.plan(be,count);
+            var shell=be==null || processingOnly && session.batches().busy(pos)
+                    || !access.machines$thermalTicking(pos)?null:MekThermalShells.plan(be,count);
             // Only the declared native masters produce pending heat in this contract.
             // Material pipes, activation-only elements and unconnected vents cannot.
             // Keep the first native heat barrier for each account after its master.

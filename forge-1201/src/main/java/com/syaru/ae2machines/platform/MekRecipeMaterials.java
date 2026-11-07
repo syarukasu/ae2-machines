@@ -28,25 +28,28 @@ public final class MekRecipeMaterials {
         for(var tank:chemicals)tank.setEmpty();
         for(var slot:machine.getInventorySlots(null))if(slot instanceof InputInventorySlot) {
             for(var entry:offered.entrySet())if(entry.getKey() instanceof AEItemKey item) {
-                var stack=item.toStack(entry.getValue().intValueExact());
+                var stack=item.toStack(1);
+                stack.setCount(bounded(entry.getValue(),slot.getLimit(stack)));
                 if(slot.isItemValid(stack)){slot.setStack(stack);inputs.add(slot);break;}
             }
         }
         for(var tank:machine.getFluidTanks(null))for(var entry:offered.entrySet())if(entry.getKey() instanceof AEFluidKey fluid) {
-            var stack=new FluidStack(fluid.getFluid(),entry.getValue().intValueExact(),fluid.getTag());
+            var stack=new FluidStack(fluid.getFluid(),bounded(entry.getValue(),tank.getCapacity()),fluid.getTag());
             if(tank.insert(stack,Action.SIMULATE,AutomationType.EXTERNAL).getAmount()<stack.getAmount()) {
-                tank.setStack(stack);inputs.add(tank);break;
+                tank.insert(stack,Action.EXECUTE,AutomationType.EXTERNAL);inputs.add(tank);break;
             }
         }
         for(var tank:chemicals)for(var entry:offered.entrySet())if(entry.getKey() instanceof MekanismKey chemical) {
-            var stack=chemical.withAmount(entry.getValue().longValueExact());
+            var stack=chemical.withAmount(entry.getValue().min(BigInteger.valueOf(tank.getCapacity())).longValueExact());
             if(stack.getClass()!=tank.getEmptyStack().getClass())continue;
             if(tank.insert(stack,Action.SIMULATE,AutomationType.EXTERNAL).getAmount()<stack.getAmount()) {
-                tank.setStack(stack);inputs.add(tank);break;
+                tank.insert(stack,Action.EXECUTE,AutomationType.EXTERNAL);inputs.add(tank);break;
             }
         }
     }
     public Map<AEKey,BigInteger> inputs(){return amounts(true);}
+    // Only the scratch probe is bounded. inspect compares actual consumption with the exact offer.
+    private static int bounded(BigInteger offered,int capacity){return offered.min(BigInteger.valueOf(capacity)).intValueExact();}
     public Map<AEKey,BigInteger> outputs(){return amounts(false);}
     private Map<AEKey,BigInteger> amounts(boolean input) {
         var result=new LinkedHashMap<AEKey,BigInteger>();

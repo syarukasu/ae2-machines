@@ -12,6 +12,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 /** Native gas/fluid processing also works without Applied Mekanistics or ACO. */
 public final class MekPassiveChemical {
     private MekPassiveChemical() {}
+    public static long turbineSteam(mekanism.common.lib.multiblock.MultiblockData data){return data.getGasTanks(null).get(0).getStored();}
+    public static long fissionFuel(mekanism.common.lib.multiblock.MultiblockData data){return data.getGasTanks(null).get(0).getStored();}
     public static long fusionFuel(mekanism.common.lib.multiblock.MultiblockData data){return data.getGasTanks(null).get(2).getStored();}
     private static java.util.List<mekanism.api.chemical.IChemicalTank<?,?>> structureTanks(mekanism.common.lib.multiblock.MultiblockData data){
         var tanks=new java.util.ArrayList<mekanism.api.chemical.IChemicalTank<?,?>>();tanks.addAll(data.getGasTanks(null));tanks.addAll(data.getInfusionTanks(null));tanks.addAll(data.getPigmentTanks(null));tanks.addAll(data.getSlurryTanks(null));return tanks;
@@ -34,7 +36,7 @@ public final class MekPassiveChemical {
         for(var tank:machine.getSlurryTanks(null))if(BigInteger.valueOf(tank.getStored()).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
         for(var tank:machine.getInfusionTanks(null))if(BigInteger.valueOf(tank.getStored()).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
         for(var tank:machine.getPigmentTanks(null))if(BigInteger.valueOf(tank.getStored()).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
-        for(var tank:machine.getFluidTanks(null))if(BigInteger.valueOf(tank.getFluidAmount()).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
+        for(var tank:machine.getFluidTanks(null))if(MekWideFluidTank.amount(tank).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
         return true;
     }
     public static void bind(BlockEntity block,CachedRecipe<?> cached) {

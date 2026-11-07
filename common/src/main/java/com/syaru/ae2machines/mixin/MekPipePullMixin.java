@@ -9,5 +9,5 @@ import org.spongepowered.asm.mixin.injection.*;
 @Mixin(targets="mekanism.common.content.network.transmitter.MechanicalPipe",remap=false)
 public abstract class MekPipePullMixin {
     @Redirect(method="getAvailablePull",at=@At(value="INVOKE",target="Lmekanism/common/tier/PipeTier;getPipePullAmount()I"))
-    private int machines$pull(PipeTier tier){return (int)Math.min(Integer.MAX_VALUE,(long)tier.getPipePullAmount()*MekTransportParallel.lanes(this));}
+    private int machines$pull(PipeTier tier){return com.syaru.ae2machines.compat.mek.MekFluidUnits.view(java.math.BigInteger.valueOf(tier.getPipePullAmount()).multiply(java.math.BigInteger.valueOf(MekTransportParallel.lanes(this))));}
 }

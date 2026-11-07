@@ -63,9 +63,9 @@ public final class MekRestorationPorts {
         var tank=tanks.get(i);fluid(ports,be,"fluid",i,tank,BigInteger.valueOf(tank instanceof MekVirtualTank v?v.machines$nativeCapacity():tank.getCapacity()));
     }}
     private static void fluid(Ports ports,BlockEntity be,String kind,int index,IExtendedFluidTank tank,BigInteger capacity){
-        ports.amount(be,kind,index,tank,()->BigInteger.valueOf(tank.getFluidAmount()),()->capacity,
+        ports.amount(be,kind,index,tank,()->MekWideFluidTank.amount(tank),()->capacity,
                 ()->PlatformData.saveKey(AEFluidKey.of(tank.getFluid()),be.getLevel()),(payload,amount)->{
-                    if(amount.signum()==0)tank.setEmpty();else tank.setStackUnchecked(((AEFluidKey)PlatformData.loadKey(payload,be.getLevel())).toStack(amount.intValueExact()));
+                    if(amount.signum()==0)tank.setEmpty();else MekFluidAccess.set(tank,((AEFluidKey)PlatformData.loadKey(payload,be.getLevel())).toStack(1),amount);
                 });
     }
     private static void energies(Ports ports,BlockEntity be,List<IEnergyContainer> containers){for(int i=0;i<containers.size();i++){

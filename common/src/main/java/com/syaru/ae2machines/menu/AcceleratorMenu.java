@@ -30,22 +30,23 @@ public final class AcceleratorMenu extends PreviewMenuAdapter {
         super(MachinesMod.MENU.get(),id,inventory,controller);this.controller=controller;
         if(controller!=null && !ComputationStructure.guiController(controller))throw new IllegalArgumentException("GUI_REQUIRES_COMPUTATION_CONTROLLER");
         refreshBays();
-        data=controller==null?new SimpleContainerData(17):new ContainerData(){
+        data=controller==null?new SimpleContainerData(18):new ContainerData(){
             public int get(int i){
                 var host=selected();
                 if(i==10)return selectedBay;if(i==11)return bays.size();if(i==12)return previewMode;
                 if(host==null)return 0;
+                if(i==17)return host.exactParallelDisplay()?1:0;
                 if(i>=13)return adjustmentAvailability[i-13];
                 return switch(i){
-                    case 0->host.speedPower();case 1->host.lanePower();case 2->host.powerPermille();
+                    case 0->host.threadPower();case 1->host.baseParallelPower();case 2->host.powerPermille();
                     case 3->host.factoryOnline()?1:0;case 5->host.hasFactory()?1:0;case 6->host.workState();
-                    case 7->ComputationStructure.maximumPower(host,true);case 8->ComputationStructure.maximumPower(host,false);
+                    case 7->ComputationStructure.threadPower(host);case 8->ComputationStructure.baseParallelPower(host);
                     case 9->host.settingsFit()?1:0;
                     default->host.loadFailed() || host.machineRuntimes().stream().anyMatch(com.syaru.ae2machines.runtime.ProcessingRuntime::quarantined)?1:0;
                 };
             }
             public void set(int i,int value){}
-            public int getCount(){return 17;}
+            public int getCount(){return 18;}
         };
         addDataSlots(data);
         if(controller!=null)previewMode=selected()!=null && selected().hasFactory()?FactoryPreviewData.FACTORY:FactoryPreviewData.STRUCTURE;
@@ -60,8 +61,9 @@ public final class AcceleratorMenu extends PreviewMenuAdapter {
         var host=selected();long now=controller.getLevel().getGameTime();
         if(host==settingsHost && now<nextSettingsPoll)return;
         settingsHost=host;nextSettingsPoll=now+20;
+        if(host!=null)host.refreshFactoryDisplaySettings();
         for(int action=0;action<4;action++)adjustmentAvailability[action]=host!=null && canManageSelected(getPlayer())
-                && host.canSetSettings(host.speedPower()+(action==0?-1:action==1?1:0),host.lanePower()+(action==2?-1:action==3?1:0))?1:0;
+                && host.canSetParallelSettings(host.threadPower()+(action==0?-1:action==1?1:0),host.baseParallelPower()+(action==2?-1:action==3?1:0))?1:0;
     }
     private boolean canManageSelected(Player player){
         var host=selected();return host!=null && controller.canAccess(player) && ComputationStructure.controls(controller,host)
@@ -115,8 +117,8 @@ public final class AcceleratorMenu extends PreviewMenuAdapter {
         }
         if(!canManageSelected(player))return false;var host=selected();
         if(action==4){boolean result=host.ejectFactoryFromController(player,controller);requestPreview(previewMode);broadcastChanges();return result;}
-        int speed=host.speedPower(),lanes=host.lanePower();
-        if(action==0)speed--;if(action==1)speed++;if(action==2)lanes--;if(action==3)lanes++;
-        host.settings(speed,lanes);nextSettingsPoll=Long.MIN_VALUE;broadcastChanges();return true;
+        host.refreshFactoryDisplaySettings();int threads=host.threadPower(),base=host.baseParallelPower();
+        if(action==0)threads--;if(action==1)threads++;if(action==2)base--;if(action==3)base++;
+        boolean changed=host.parallelSettings(threads,base);nextSettingsPoll=Long.MIN_VALUE;broadcastChanges();return changed;
     }
 }

@@ -1,52 +1,68 @@
-# AE2 Machines 0.1.3
+# AE2 Machines 0.1.4
 
-Minecraft **1.20.1 Forge** / **1.21.1 NeoForge**向けのプレリリースです。
-対応する本体JARを1つだけ、クライアント・サーバー双方へ導入してください。
+Minecraft **1.20.1 Forge** / **1.21.1 NeoForge** 向けの実験的プレリリースです。
+対応する本体JARを1つだけ、クライアントとサーバー双方へ導入してください。
 AE2は必須、ACOは任意連携です。他MOD本体は同梱しません。
+
+## 修正の背景
+
+最大並列で原子炉から反物質を生産する試験中、流体量のint上限（2,147,483,647）に引っかかり、ボイラー・タービン系統が停止する問題が見つかりました。
+単体用のFluidStack APIの上限が、仮想並列分の水・凝縮水や配管内の合計量にも適用され、必要な給水・循環を維持できなくなっていました。
+0.1.4は、この試験で判明した制限を合計量のBigInteger会計と対応する搬送処理で修正するプレリリースです。
+修正後のシンク構成による実環境再試験は今回は行っていません。試験での問題発見と、修正後の実生産確認は別です。
 
 ## 変更点
 
-- 同じProvider・加工依頼・加工先の未開始ジョブを数量付きでまとめ、元のCPU受付条件と素材の所有権を保ったまま、重複する受付・探索を削減しました。
-- セル内のProvider経路と加工設備の接続情報を再利用します。パターン、設備、面設定、アップグレード、赤石設定の変更時は影響する情報を更新し、チャンク再読込・セル再装着時は再構築します。
-- 加工時刻とワールド・AE2の時刻を分離しました。加速のためにワールド全体、AE2ネットワーク、チャンク管理を倍率分繰り返しません。
-- 正確な一括更新に対応した加工は、元機械の処理で時間区間をまとめます。一括化できない加工は本家の処理順を維持します。
-- 原子炉・ボイラー・タービン周辺の構造部材について、変化のない受電履歴の更新と繰り返し照会を削減しました。燃料・熱・冷却水・蒸気・凝縮量・実発電量の計算を省略する変更ではありません。
-- BigInteger会計と既存公開APIを維持します。レシピ、必要素材、消費電力、CPUの並列数、搬入出速度は変更しません。
+- セル内のMekanism流体タンク・機械配管について、仮想並列分の合計量をBigIntegerで保持します。通常のFluidStack APIのint値を、工場全体の保有量の上限として扱わない構成へ変更しました。
+- 対応するセル内の搬送先同士では、本家の挿入・取り出し判定を通しつつ、転送量を集約します。未対応の外部容器や有限の他MOD容器を、無条件に数量倍化することはありません。
+- 本家ボイラーの1台分の沸騰判定と合計の水・蒸気・熱会計を分離しました。タービンの凝縮量も、対応する仮想並列分を合計量で扱います。
+- 流体の追加数量を保存データへ記録し、配管の保存共有分・ネットワークの結合・アップグレード・セルからの復元会計へ引き継ぐ処理を追加しました。
+- Cooking for Blockheadsのシンクは、本家の無限水設定でセル内の機械配管が取り出す場合に集約対象として扱います。シンクやMekanism本体の設定を書き換える機能ではありません。
+- 並列演算器と多重演算コアを組み合わせ、T9同士の設定上限を33,554,432並列とします。多重演算コアは仮想台数の倍率であり、同数のOSスレッドを生成しません。現行マルチブロックの加速設定は等速です。
+- 原子炉は合意済みの「基準炉の温度状態を共有する」モデルで並列数を扱います。各仮想炉の異なる温度履歴を個別再現する仕様ではありません。
+- 既存の公開APIとACO任意連携を維持します。内部AE2 CPUとInduction Matrix専用の並列化は対象外です。
 
-0.1.2-dev.18の検証済み処理を0.1.3として再ビルドしたものです。
+## 確認状況
 
-## 確認範囲
+この公開物はビルドと静的な配布物確認を行った候補です。
+公開前の最終GameTest・起動試験・シンク経由の再試験は省略しています。
+作業途中の限定テストは成功完了しておらず、最終版の数量・熱・復旧の実行時保証には使っていません。
 
-- 両ローダーで、通常AE2の数量付き依頼、有限給電、分割搬入、加工途中の保存・再装着を照合しました。
-- 原子炉・ボイラー・タービンの燃料、循環ナトリウム、冷却水、蒸気、凝縮量、電力、熱履歴を元の経路と照合しました。
-- 合意済みチェックポイント直後の強制終了からの再開、および失効したチェックポイントを再開しない動作を確認しました。
-- ACOもMekanismもない構成で、汎用時間契約の数量・電力・保存処理を確認しました。
-- 公開物に受入試験用コード、ワールド、ログ、ローカル依存JARは含めていません。
+最大並列での335,544,320個の反物質ペレット実生産、全構成の安定動作、性能改善を確認済みとするリリースではありません。
+SPSや他MOD APIに残る個別の型上限を、すべて除去した版でもありません。
+通常APIとGUIにはint量の表示窓が残るため、表示値だけで合計数量を判断しないでください。
 
-## 加速負荷の比較
+**既存ワールドのバックアップを推奨します。**
+int上限を超えた流体を保存したワールドを旧版で開くと、追加数量を旧版が読み取れません。直接ダウングレードしないでください。
+公開JARに私用試験コード・ワールド・ログ・依存MODは含めていません。
 
-原子炉・ボイラー・タービンの同じ有限資源回路を使用した隔離環境での測定です。
-Q=1・S=256、各候補2 JVM、各回16 tickのウォームアップと65 tickの計測を行い、2周目の平均を比較しました。
-比較対象は直前のdev.17とdev.18であり、公開済みdev.2との性能差ではありません。
-詳細監査とJFRは計測中に無効化しています。
+## English
 
-| ローダー | 改善前 | 0.1.3相当 | 平均時間の削減 |
-| --- | ---: | ---: | ---: |
-| Forge 1.20.1 | 24.954 ms/tick | 22.243 ms/tick | 約10.9% |
-| NeoForge 1.21.1 | 18.658 ms/tick | 14.949 ms/tick | 約19.9% |
+Experimental pre-release for Forge 1.20.1 and NeoForge 1.21.1.
+AE2 is required on both sides; ACO remains optional.
 
-この数字は隔離環境のサーバーtick区間であり、実際のMODパックのSpark/TPS計測ではありません。
-測定回数は少なく、外れ値もあります。等速の性能向上や全体のメモリ削減は主張しません。
+During the maximum-parallel reactor-to-antimatter trial, the int fluid-quantity
+ceiling (2,147,483,647) stalled the boiler/turbine circuit. The native single-unit
+FluidStack limit was also limiting aggregate water, condensate and pipe contents,
+preventing sufficient water supply and circulation. This release addresses that
+observed failure; the revised sink-based circuit has not been retested in-game.
 
-## 残る制約
+Virtual Mekanism fluid inventories now retain aggregate quantities with BigInteger
+instead of using the native int FluidStack view as the total inventory limit.
+Supported native pipe transfers, boiler water/steam accounting, turbine condensate,
+save shares and restoration accounting use the extended quantities.
+Cooking for Blockheads sinks can participate in aggregated pulls in their native
+infinite-water mode. Unknown finite external tanks are not multiplied.
 
-- 熱源と搬送網の本家の状態遷移には、加速倍率に応じた処理が残っています。256倍を等速1台と同じ負荷にした版ではありません。
-- 全機種の自動集約、任意の工場の20 TPS、Q=65,536の熱回路性能を保証するものではありません。
-- Sは加工側の加速です。昼夜、エンティティ、作物のランダム成長を倍率分進めません。
-- 内部AE2 CPUとInduction Matrix専用の加速・並列化は対象外です。
-- 任意の外部ME・電源・倉庫をまたぐ、あらゆるタイミングの異常終了復旧は保証しません。
-- ACOのInstant改修は別候補で、このリリースには同梱していません。
-- サバイバル用レシピは未整備です。
+The modular computer currently runs at normal speed with up to 33,554,432 virtual
+lanes from the T9 parallel core and T9 multiplicative core. This is a configured
+limit, not measured throughput or a claim of constant CPU cost. Fission lanes share
+the reference reactor's thermal state.
 
-既存ワールドをバックアップし、新規ワールドでの確認から始めてください。
-更新前に旧版の加工を完了し、出力を回収することを推奨します。
+Final runtime, GameTest and sink-circuit acceptance were intentionally not rerun.
+Intermediate focused tests did not complete successfully. This release does not
+claim completed maximum-parallel pellet production, crash-recovery certification,
+or removal of every int limit in other APIs. Existing public APIs remain unchanged.
+
+Back up worlds. Do not downgrade a world containing extended fluid quantities:
+older versions cannot read those additional amounts.

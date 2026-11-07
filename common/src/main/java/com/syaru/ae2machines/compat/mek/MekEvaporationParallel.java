@@ -47,7 +47,7 @@ public final class MekEvaporationParallel {
         if(!supports(b))return true;
         var data=((TileEntityThermalEvaporationBlock)b).getMultiblock();
         for(var tank:java.util.List.of(data.inputTank,data.outputTank))
-            if(BigInteger.valueOf(tank.getFluidAmount()).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
+            if(MekWideFluidTank.amount(tank).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
         return true;
     }
 }

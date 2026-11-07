@@ -24,6 +24,15 @@ public final class MekRestorationContainers {
     public static void heat(Ports ports,BlockEntity owner,List<IHeatCapacitor> capacitors){
         for(int i=0;i<capacitors.size();i++){
             var heat=capacitors.get(i);
+            if(i==0 && owner instanceof mekanism.common.lib.multiblock.IMultiblock<?> tile
+                    && tile.getMultiblock() instanceof FissionParallelState.Access access && access.machines$fissionGroups().initialized()){
+                var groups=access.machines$fissionGroups();int count=groups.copies();
+                ports.heat(owner,"heat",i,heat,()->groups.heat(access),()->groups.pending(access),
+                        ()->decimal(((MekStructureHeat)heat).machines$baseHeatCapacity()*count),count,
+                        ()->groups.keptHeat(access),()->groups.keptPending(access),
+                        (stored,pending)->groups.project(access,stored.doubleValue(),pending.doubleValue()));
+                continue;
+            }
             int q=heat instanceof MekStructureHeat virtual && virtual.machines$scaledHeat()?MekWorldParallel.lanes(owner):1;
             ports.heat(owner,"heat",i,heat,()->decimal(heat.getHeat()),
                     ()->heat instanceof MekHeatAccess access?decimal(access.ae2machines$pendingHeat()):BigDecimal.ZERO,

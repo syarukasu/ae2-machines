@@ -169,7 +169,7 @@ public final class NativeWorldBatches {
         @Override public boolean isBusy(){return provider.isRemoved() || !session.isOnline() || !provider.getMainNode().isActive() || provider.getLogic().isBusy();}
         @Override public boolean pushPattern(IPatternDetails pattern,KeyCounter[] holders){return pushPatterns(pattern,holders,1);}
         @Override public int normalBatchLimit(IPatternDetails pattern,int limit) {
-            if(limit<=0 || isBusy())return 0;
+            if(limit<=0 || isBusy() || session.host().migratingAcceleration())return 0;
             var t=target(provider.getBlockPos(),pattern).orElse(null);if(t==null)return 0;
             if(!((NativeWorldProvider)provider.getLogic()).machines$countedTarget(pattern,t.machine()))return 0;
             var old=occupiedMachines.get(t.machine().asLong());
@@ -209,6 +209,7 @@ public final class NativeWorldBatches {
         return bindings.computeIfAbsent(key,ignored->NativeWorldMachine.processor(world.getBlockEntity(target.machine()),target.profile()));
     }
     public long limit(IPatternDetails pattern,long offered) {
+        if(session.host().migratingAcceleration())return 0;
         var t=target(pattern).orElse(null);if(t==null || offered<2 || busy(t.machine()) || !idle(t) || !processor(t).independentCopies())return 0;
         var n=BigInteger.valueOf(offered).min(session.runtime().lanes().multiply(session.runtime().speed().divide(t.profile().recipe().duration()).max(BigInteger.ONE)));
         for(var map:List.of(t.profile().recipe().inputs(),t.profile().recipe().outputs()))for(var amount:map.values())n=n.min(BigInteger.valueOf(Long.MAX_VALUE).divide(amount));
@@ -301,7 +302,7 @@ public final class NativeWorldBatches {
                     && old.job().checkpoint().total().equals(count) && ExactAmounts.multiply(old.target.profile().recipe().inputs(),count).equals(inputs)
                     && ExactAmounts.multiply(old.target.profile().recipe().outputs(),count).equals(outputs),"NATIVE_BATCH_IDENTITY_CHANGED");return old.job().state()!=BatchJob.State.CANCELLED;
         }
-        if(!session.isOnline() || session.variable()!=null && session.variable().hasId(id))return false;
+        if(session.host().migratingAcceleration() || !session.isOnline() || session.variable()!=null && session.variable().hasId(id))return false;
         if(v2 && !com.syaru.ae2machines.world.ExternalHandoffs.supportsNativeOutput(session))return false;
         var target=target(pattern).orElse(null);if(target==null || busy(target.machine()) || !idle(target))return false;
         var recipe=target.profile().recipe();

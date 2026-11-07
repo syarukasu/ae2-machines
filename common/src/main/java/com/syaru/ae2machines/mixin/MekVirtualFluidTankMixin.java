@@ -12,10 +12,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class MekVirtualFluidTankMixin implements MekVirtualTank {
     @Shadow @Final private int capacity;
     @Unique private WeakReference<BlockEntity> machines$owner;
-    @Override public void machines$owner(BlockEntity owner){machines$owner=new WeakReference<>(owner);}
+    @Override public void machines$owner(BlockEntity owner){machines$owner=new WeakReference<>(owner);((MekWideFluidTank)this).machines$fluidCapacity(()->java.math.BigInteger.valueOf(machines$nativeCapacity()).multiply(java.math.BigInteger.valueOf(MekWorldParallel.lanes(machines$owner.get()))));}
     @Override public long machines$nativeCapacity(){return capacity;}
     @Inject(method="getCapacity",at=@At("RETURN"),cancellable=true)
     private void machines$capacity(CallbackInfoReturnable<Integer> cir) {
-        if(machines$owner!=null)cir.setReturnValue(MekWorldParallel.slotLimit(machines$owner.get(),cir.getReturnValueI()));
+        if(((MekWideFluidTank)this).machines$wideFluid())cir.setReturnValue(MekFluidUnits.view(((MekWideFluidTank)this).machines$fluidCapacity()));
     }
 }

@@ -14,7 +14,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 /** Only structural housekeeping is folded. Masters, real ports and heat barriers stay native. */
 public final class MekThermalShells {
     private static final Set<String> DATA=Set.of("mekanism.common.content.boiler.BoilerMultiblockData",
-        "mekanism.generators.common.content.fission.FissionReactorMultiblockData","mekanism.generators.common.content.turbine.TurbineMultiblockData");
+        "mekanism.generators.common.content.fission.FissionReactorMultiblockData","mekanism.generators.common.content.turbine.TurbineMultiblockData",
+        "mekanism.common.content.sps.SPSMultiblockData");
     private static final Set<String> SHELLS=Set.of("mekanism.common.tile.prefab.TileEntityInternalMultiblock","mekanism.common.tile.TileEntityPressureDisperser",
         "mekanism.common.tile.multiblock.TileEntityStructuralGlass","mekanism.common.tile.multiblock.TileEntityBoilerCasing",
         "mekanism.generators.common.tile.TileEntityReactorGlass",
@@ -23,7 +24,8 @@ public final class MekThermalShells {
         "mekanism.generators.common.tile.turbine.TileEntityTurbineCasing","mekanism.generators.common.tile.turbine.TileEntityTurbineVent",
         "mekanism.generators.common.tile.turbine.TileEntityElectromagneticCoil","mekanism.generators.common.tile.turbine.TileEntitySaturatingCondenser",
         "mekanism.generators.common.tile.turbine.TileEntityRotationalComplex",
-        "mekanism.generators.common.tile.turbine.TileEntityTurbineRotor");
+        "mekanism.generators.common.tile.turbine.TileEntityTurbineRotor",
+        "mekanism.common.tile.multiblock.TileEntitySuperchargedCoil");
     private static final Set<String> ACTIVE=Set.of("mekanism.common.tile.multiblock.TileEntityBoilerValve",
         "mekanism.generators.common.tile.fission.TileEntityFissionReactorPort","mekanism.generators.common.tile.turbine.TileEntityTurbineValve",
         "mekanism.common.tile.transmitter.TileEntityPressurizedTube","mekanism.common.tile.transmitter.TileEntityMechanicalPipe",
@@ -61,11 +63,12 @@ public final class MekThermalShells {
     }
     private MekThermalShells(){}
     private static final String FISSION_CASING="mekanism.generators.common.tile.fission.TileEntityFissionReactorCasing";
-    private enum Role { UNKNOWN, ACTIVE, SHELL, FISSION, VENT, HEATER, PIPE }
+    private enum Role { UNKNOWN, ACTIVE, SHELL, FISSION, SPS, VENT, HEATER, PIPE }
     private static final ClassValue<Role> ROLES=new ClassValue<>(){
         @Override protected Role computeValue(Class<?> type){
             String name=type.getName();
             if(FISSION_CASING.equals(name))return Role.FISSION;
+            if(name.equals("mekanism.common.tile.multiblock.TileEntitySPSCasing"))return Role.SPS;
             if(name.equals("mekanism.generators.common.tile.turbine.TileEntityTurbineVent"))return Role.VENT;
             if(name.equals("mekanism.common.tile.multiblock.TileEntitySuperheatingElement"))return Role.HEATER;
             if(type==mekanism.common.tile.transmitter.TileEntityPressurizedTube.class
@@ -109,6 +112,8 @@ public final class MekThermalShells {
         var role=ROLES.get(raw.getClass());
         boolean heater=circuit && role==Role.HEATER;
         boolean fission=circuit && role==Role.FISSION;
+        boolean sps=circuit && role==Role.SPS;
+        if(!MekThermalHooks.safe(raw.getClass()))return null;
         if(circuit && role==Role.PIPE){
             var tile=(mekanism.common.tile.transmitter.TileEntityTransmitter)raw;
             if(raw.isRemoved() || !tile.getTransmitter().hasTransmitterNetwork() || !MekThermalHooks.safe(tile.getTransmitter().getClass()))return null;
@@ -121,11 +126,11 @@ public final class MekThermalShells {
             // Native transmitters use their own ticker, which does not advance the Mek tile clock.
             return new Shell(raw,count,List.of(),quiet,tile.getTransmitter().getTransmitterNetwork(),()->false);
         }
-        if((role!=Role.SHELL && role!=Role.FISSION && role!=Role.VENT && !heater) || raw.isRemoved())return null;
+        if((role!=Role.SHELL && role!=Role.FISSION && role!=Role.VENT && !heater && !sps) || raw.isRemoved())return null;
         var m=(TileEntityMekanism)raw;
         // No frequency, comparator, upgrade, redstone or activation event can be hidden here.
         var f=m.getFrequencyComponent();var flags=(MekThermalFrequencyAccess)f;
-        if(m.supportsUpgrades() || m.supportsComparator() || m.supportsRedstone() || m.isActivatable() && !heater && !fission
+        if(m.supportsUpgrades() || m.supportsComparator() || m.supportsRedstone() || m.isActivatable() && !heater && !fission && !sps
                 || f.hasCustomFrequencies() || f.getFrequency(FrequencyType.SECURITY)!=null || flags.machines$thermalSave() || flags.machines$thermalNotify())return null;
         MultiblockData owner;BooleanSupplier quiet=null,driver=null;
         boolean clientActive=((MekTimeBaseAccess)m).machines$thermalClientActive();
@@ -147,6 +152,13 @@ public final class MekThermalShells {
                     }
                 }
                 catch(ReflectiveOperationException changed){return null;}
+            }
+            if(sps){
+                var data=(mekanism.common.content.sps.SPSMultiblockData)owner;
+                boolean sound=data.handlesSound((mekanism.common.tile.multiblock.TileEntitySPSCasing)m);
+                var stateSps=(MekThermalSpsTileAccess)m;
+                driver=()->data.lastProcessed>0;
+                quiet=()->clientActive==m.getActive() && stateSps.machines$previousSpsActive()==(sound && data.lastProcessed>0);
             }
             if(role==Role.VENT)for(var side:Direction.values()){
                 var pos=m.getBlockPos().relative(side);

@@ -43,7 +43,7 @@ public final class AcceleratorScreen extends PreviewScreenAdapter<AcceleratorMen
         for(int i=0;i<adjustments.length;i++){
             int action=i;
             adjustments[i]=icon("adjust"+i,i%2==0?Icon.ARROW_DOWN:Icon.ARROW_UP,
-                    tr(i<2?"gui.ae2machines.spatial_accelerator.speed":"gui.ae2machines.spatial_accelerator.quantum")
+                    tr(i<2?"gui.ae2machines.spatial_accelerator.threads":"gui.ae2machines.spatial_accelerator.quantum")
                             .append(": ").append(tr(i%2==0?"ae2machines.halve":"ae2machines.double")),()->send(action));
         }
         factoryTab=tab("factory",new ItemStack(MachinesMod.CELL.get()),tr("gui.ae2machines.preview.factory"),()->send(5));
@@ -138,11 +138,14 @@ public final class AcceleratorScreen extends PreviewScreenAdapter<AcceleratorMen
         else if(scene.degraded() || snapshot.omitted()>0 || snapshot.unloaded()>0)previewStatus=tr("gui.ae2machines.preview.partial");
         else previewStatus=tr("gui.ae2machines.preview."+snapshot.status());
     }
-    private static String multiplier(int power){return (power>16?"2^"+power:java.text.NumberFormat.getIntegerInstance(java.util.Locale.ROOT).format(1L<<Math.max(0,power)))+"\u00d7";}
-    private ItemStack processor(boolean speed){
+    private static String count(int power){return power>30?"2^"+power:java.text.NumberFormat.getIntegerInstance(java.util.Locale.ROOT).format(1L<<Math.max(0,power));}
+    private static String multiplier(int power){return count(power)+"\u00d7";}
+    private ItemStack processor(boolean threads){
         if(menu.value(11)==0)return ItemStack.EMPTY;
-        int tier=Math.max(0,Math.min(8,menu.value(speed?7:8)-(speed?1:4)));
-        return new ItemStack((speed?MachinesMod.SPEED_PROCESSORS:MachinesMod.PARALLEL_PROCESSORS).get(tier).get());
+        int tier=0;
+        if(threads)tier=Math.max(0,Math.min(8,menu.value(7)-1));
+        else for(int i=1;i<=9;i++)if(com.syaru.ae2machines.engine.ProcessorTiers.parallelPower(i)==menu.value(8)){tier=i-1;break;}
+        return new ItemStack((threads?MachinesMod.SPEED_PROCESSORS:MachinesMod.PARALLEL_PROCESSORS).get(tier).get());
     }
     @Override public void drawBG(GuiGraphics g,int x,int y,int mx,int my,float partialTick){
         g.fill(x,y,x+imageWidth,y+imageHeight,FRAME);g.fill(x+1,y+1,x+imageWidth-1,y+imageHeight-1,BODY);
@@ -175,8 +178,8 @@ public final class AcceleratorScreen extends PreviewScreenAdapter<AcceleratorMen
         String status=font.plainSubstrByWidth(statusLine().getString(),imageWidth-186);
         int statusX=imageWidth-10-font.width(status);g.fill(statusX-8,11,statusX-5,14,statusColor);g.drawString(font,status,statusX,9,statusColor,false);
         for(int i=0;i<2;i++){
-            int start=controlX(i);g.drawString(font,tr(i==0?"gui.ae2machines.spatial_accelerator.speed":"gui.ae2machines.spatial_accelerator.quantum"),start+4,controlY()+3,MUTED,false);
-            String value=menu.value(11)==0?"-":multiplier(menu.value(i));
+            int start=controlX(i);g.drawString(font,tr(i==0?"gui.ae2machines.spatial_accelerator.threads":"gui.ae2machines.spatial_accelerator.quantum"),start+4,controlY()+3,MUTED,false);
+            String value=menu.value(11)==0?"-":menu.value(17)==0?"API":i==0?multiplier(menu.value(0)):count(menu.value(0)+menu.value(1));
             float scale=Math.min(1.2f,(controlWidth()-82)/(float)Math.max(1,font.width(value)));
             g.pose().pushPose();g.pose().translate(start+28,controlY()+21,0);g.pose().scale(scale,scale,1);
             g.drawString(font,value,0,0,i==0?VIOLET:CYAN,false);g.pose().popPose();
@@ -191,7 +194,7 @@ public final class AcceleratorScreen extends PreviewScreenAdapter<AcceleratorMen
         if(localY>=1 && localY<25 && localX>=30 && localX<164 && font.width(getTitle())>132)drawTooltip(g,mx,my,List.of(getTitle()));
         if(localY>=1 && localY<25 && localX>=170)drawTooltip(g,mx,my,List.of(statusLine()));
         if(localY>=controlY() && localY<imageHeight-8)for(int i=0;i<2;i++)if(localX>=controlX(i) && localX<controlX(i)+controlWidth()-44)
-            drawTooltip(g,mx,my,List.of(tr(i==0?"gui.ae2machines.spatial_accelerator.speed":"gui.ae2machines.spatial_accelerator.quantum"),tr("gui.ae2machines.maximum",multiplier(menu.value(i==0?7:8)))));
+            drawTooltip(g,mx,my,List.of(tr(i==0?"gui.ae2machines.spatial_accelerator.threads":"gui.ae2machines.spatial_accelerator.quantum"),tr("gui.ae2machines.maximum",i==0?multiplier(menu.value(7)):count(menu.value(7)+menu.value(8)))));
         if(localX>=VIEW_X && localX<VIEW_X+18 && localY>=VIEW_Y && localY<VIEW_Y+18 && snapshot!=null)drawTooltip(g,mx,my,List.of(previewStatus));
     }
     private boolean overScene(double x,double y){return x>=leftPos+VIEW_X && x<leftPos+VIEW_X+sceneWidth() && y>=topPos+VIEW_Y && y<topPos+VIEW_Y+sceneHeight();}

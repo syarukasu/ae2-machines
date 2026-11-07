@@ -18,7 +18,7 @@ public abstract class MekStructureHeatMixin implements MekStructureHeat {
     @Override public boolean machines$scaledHeat(){return machines$reactor!=null && MekWorldParallel.lanes(machines$reactor.get())>1;}
     @Inject(method="getHeatCapacity",at=@At("RETURN"),cancellable=true)
     private void machines$capacity(CallbackInfoReturnable<Double> cir){
-        if(machines$rawCapacity==0 && machines$reactor!=null)cir.setReturnValue(cir.getReturnValueD()*MekWorldParallel.lanes(machines$reactor.get()));
+        if(machines$rawCapacity==0 && machines$reactor!=null)cir.setReturnValue(cir.getReturnValueD()*FissionParallelState.heatLanes(machines$reactor.get()));
     }
     @Inject(method="setHeatCapacity",at=@At("HEAD"))
     private void machines$beginBase(double capacity,boolean updateHeat,CallbackInfo ci){machines$rawCapacity++;}

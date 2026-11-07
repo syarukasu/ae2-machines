@@ -112,9 +112,15 @@ public final class ComputationStructure {
     }
     public static int maximumPower(BaseAccelerator bay, boolean speed) {
         if (!modular(bay)) return 3400;
+        return speed?0:baseParallelPower(bay)+threadPower(bay);
+    }
+    public static int baseParallelPower(BaseAccelerator bay){return corePower(bay,false);}
+    public static int threadPower(BaseAccelerator bay){return corePower(bay,true);}
+    private static int corePower(BaseAccelerator bay,boolean threads){
+        if(!modular(bay))return threads?0:3400;
         var assembly = owner(bay.getLevel(), bay.getBlockPos());
         var powers = assembly == null || !assembly.valid ? null : assembly.limits.get(bay);
-        return powers == null ? 0 : powers[speed ? 0 : 1];
+        return powers == null ? 0 : powers[threads ? 0 : 1];
     }
     public static boolean accepts(BaseAccelerator bay, BigInteger speed, BigInteger lanes) {
         if (!modular(bay)) return speed.signum() > 0 && lanes.signum() > 0;
@@ -187,7 +193,7 @@ public final class ComputationStructure {
             if (unit > MAX_UNITS) return null;
             BaseAccelerator bay = null;
             BlockPos power = null;
-            int speedPower = 0, lanePower = 0;
+            int threadPower = 0, lanePower = 0;
             for (int y = 0; y < 3; y++) for (int z = 0; z < 2; z++) {
                 var p = position(center, facing, -unit, y, z);
                 if (!level.hasChunkAt(p)) return null;
@@ -202,7 +208,7 @@ public final class ComputationStructure {
                     lanePower = ((ComputationPartBlock)state.getBlock()).maximumPower();
                 } else if (y == 2) {
                     if (!part(state, ComputationPartBlock.Kind.SPEED)) return null;
-                    speedPower = ((ComputationPartBlock)state.getBlock()).maximumPower();
+                    threadPower = ((ComputationPartBlock)state.getBlock()).maximumPower();
                 } else {
                     if (!state.is(com.syaru.ae2machines.platform.MachinesMod.COMPUTATION_POWER.get())
                             && !state.is(com.syaru.ae2machines.platform.MachinesMod.ENERGY.get())) return null;
@@ -212,7 +218,7 @@ public final class ComputationStructure {
             }
             result.bays.add(Objects.requireNonNull(bay));
             result.power.put(Objects.requireNonNull(power), bay);
-            result.limits.put(bay, new int[]{speedPower, lanePower});
+            result.limits.put(bay, new int[]{threadPower, lanePower});
         }
         return null;
     }

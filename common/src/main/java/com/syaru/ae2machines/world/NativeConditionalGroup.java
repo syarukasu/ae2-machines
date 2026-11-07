@@ -8,6 +8,7 @@ import net.minecraft.world.level.block.entity.TickingBlockEntity;
 final class NativeConditionalGroup {
     static final class Slot {
         final int position;final TickingBlockEntity ticker;boolean removed;
+        NativeConditionalGroup wakes;
         Slot(int position,TickingBlockEntity ticker){this.position=position;this.ticker=ticker;}
     }
     final List<Slot> members=new ArrayList<>();

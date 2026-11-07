@@ -16,17 +16,19 @@ public class AcceleratorEntity extends BaseAccelerator {
     }
     @Override public void loadTag(CompoundTag tag,HolderLookup.Provider registries) {
         super.loadTag(tag,registries);getMainNode().loadFromNBT(tag);
-        if(tag.hasUUID("factory")) { restoreFactoryDisplaySettings(tag.getInt("speedPower"),tag.getInt("lanePower"));factoryId=tag.getUUID("factory");return; }
+        if(tag.hasUUID("factory")) { restoreFactoryDisplaySettings(tag.getInt("speedPower"),tag.getInt("lanePower"),tag.getInt("threadPower"));factoryId=tag.getUUID("factory");return; }
         if(tag.contains("runtime")) {
             try {
                 runtime = RuntimeCodec.read(tag.getCompound("runtime"),key -> AEKey.fromTagGeneric(registries,key), ignored -> checkpoint());
-                settings(tag.getInt("speedPower"),tag.getInt("lanePower"));
+                restoreFactoryDisplaySettings(tag.getInt("speedPower"),tag.getInt("lanePower"),tag.getInt("threadPower"));
+                loadedFactorySettings();
             } catch(RuntimeException error) { retainedInvalid=tag.getCompound("runtime").copy();failedLoad(); }
         }
     }
     @Override public void saveAdditional(CompoundTag tag,HolderLookup.Provider registries) {
         super.saveAdditional(tag,registries);getMainNode().saveToNBT(tag);
         tag.putInt("speedPower",speedPower());tag.putInt("lanePower",lanePower());
+        tag.putInt("threadPower",threadPower());
         if(factoryId!=null) { tag.putUUID("factory",factoryId);return; }
         tag.put("runtime",retainedInvalid != null ? retainedInvalid.copy() :
                 RuntimeCodec.write(runtime,key -> key.toTagGeneric(registries)));

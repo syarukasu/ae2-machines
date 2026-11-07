@@ -13,6 +13,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 /** Native chemical/fluid processing also works without Applied Mekanistics or ACO. */
 public final class MekPassiveChemical {
     private MekPassiveChemical() {}
+    public static long turbineSteam(mekanism.common.lib.multiblock.MultiblockData data){return data.getChemicalTanks(null).get(0).getStored();}
+    public static long fissionFuel(mekanism.common.lib.multiblock.MultiblockData data){return data.getChemicalTanks(null).get(0).getStored();}
     public static long fusionFuel(mekanism.common.lib.multiblock.MultiblockData data){return data.getChemicalTanks(null).get(2).getStored();}
     public static void prepareStructure(mekanism.common.lib.multiblock.MultiblockData data,BlockEntity owner){
         for(var tank:data.getChemicalTanks(null))if(tank instanceof MekVirtualTank virtual)virtual.machines$owner(owner);
@@ -26,7 +28,7 @@ public final class MekPassiveChemical {
     }
     public static boolean fits(TileEntityConfigurableMachine machine,BigInteger lanes) {
         for(var tank:machine.getChemicalTanks(null))if(BigInteger.valueOf(tank.getStored()).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
-        for(var tank:machine.getFluidTanks(null))if(BigInteger.valueOf(tank.getFluidAmount()).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
+        for(var tank:machine.getFluidTanks(null))if(MekWideFluidTank.amount(tank).compareTo(BigInteger.valueOf(((MekVirtualTank)tank).machines$nativeCapacity()).multiply(lanes))>0)return false;
         return true;
     }
     public static void bind(BlockEntity block,CachedRecipe<?> cached) {

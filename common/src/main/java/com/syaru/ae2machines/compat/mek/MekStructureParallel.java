@@ -32,6 +32,10 @@ public final class MekStructureParallel {
             if(actual.get(i) instanceof MekStructureHeat heat && heat.machines$scaledHeat()
                     && saved.get(i) instanceof mekanism.common.capabilities.heat.BasicHeatCapacitor basic)
                 basic.setHeatCapacity(heat.machines$baseHeatCapacity(),false);
+        var fluids=data.getFluidTanks(null);var savedFluids=cache.getFluidTanks(null);
+        for(int i=0;i<Math.min(fluids.size(),savedFluids.size());i++)
+            if(fluids.get(i) instanceof MekWideFluidTank wide && savedFluids.get(i) instanceof MekWideFluidTank target)
+                target.machines$fluidAmount(wide.machines$fluidAmount());
     }
     public static void enrollExtraFluids(MultiblockData data){if(data.isFormed() && data instanceof MekStructureFluids extra)extra.machines$enrollExtraFluids();}
     public static void reconfigured(java.util.List<BlockEntity> blocks,BigInteger before,BigInteger after){
@@ -57,7 +61,8 @@ public final class MekStructureParallel {
         for(var tank:data.getFluidTanks(null))if(tank instanceof MekVirtualTank virtual)virtual.machines$owner(owner);
         MekPassiveChemical.prepareStructure(data,owner);
         for(var energy:data.getEnergyContainers(null))if(energy instanceof MekStructureEnergy virtual)virtual.machines$structureOwner(owner);
-        if(reactor(data))for(var heat:data.getHeatCapacitors(null))if(heat instanceof MekStructureHeat virtual)virtual.machines$structureOwner(owner);
+        if(reactor(data) || data instanceof mekanism.common.content.boiler.BoilerMultiblockData)
+            for(var heat:data.getHeatCapacitors(null))if(heat instanceof MekStructureHeat virtual)virtual.machines$structureOwner(owner);
     }
     public static long capacity(Object tank,BlockEntity owner,long original){
         int lanes=MekWorldParallel.lanes(owner);
@@ -72,7 +77,7 @@ public final class MekStructureParallel {
         var data=((IMultiblock<?>)owner).getMultiblock();
         if(data instanceof MekFusionState fusion && !fusion.machines$plasmaFits((double)lanes(data)/lanes.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValueExact()))return false;
         for(var tank:data.getFluidTanks(null))if(!(tank instanceof MekVirtualTank virtual)
-                || BigInteger.valueOf(tank.getFluidAmount()).compareTo(BigInteger.valueOf(virtual.machines$nativeCapacity()).multiply(lanes))>0)return false;
+                || MekWideFluidTank.amount(tank).compareTo(BigInteger.valueOf(virtual.machines$nativeCapacity()).multiply(lanes))>0)return false;
         for(var energy:data.getEnergyContainers(null))if(energy instanceof MekStructureEnergy virtual
                 && new java.math.BigDecimal(String.valueOf(energy.getEnergy())).movePointRight(4).toBigIntegerExact().compareTo(virtual.machines$structureBaseEnergy().multiply(lanes))>0)return false;
         return MekPassiveChemical.fitsStructure(data,lanes);

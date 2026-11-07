@@ -35,7 +35,8 @@ public abstract class BaseAccelerator extends AEBaseBlockEntity implements IGrid
         @Override public void onSaveChanges(BaseAccelerator host,IGridNode node) { host.setChanged(); }
     }).setInWorldNode(true).setTagName("grid").setIdlePowerUsage(1).setFlags(GridFlags.REQUIRE_CHANNEL)
             .setExposedOnSides(EnumSet.allOf(Direction.class));
-    private int speedPower, lanePower;
+    private int speedPower, lanePower, threadPower;
+    private boolean legacyAcceleration;
     private boolean loadFailed;
     protected java.util.UUID factoryId;
     protected FactoryHandle factory;
@@ -54,7 +55,11 @@ public abstract class BaseAccelerator extends AEBaseBlockEntity implements IGrid
         return level!=null && !level.isClientSide && !isRemoved() && !loadFailed && factory instanceof NativeWorldSession nativeWorld
                 ? nativeWorld.receiveExactFE(offered,simulate):BigInteger.ZERO;
     }
-    public boolean settingsFit() { return ComputationStructure.accepts(this,runtime.speed(),runtime.lanes()); }
+    public boolean settingsFit() {
+        return ComputationStructure.accepts(this,runtime.speed(),runtime.lanes())
+                || legacyAcceleration && ComputationStructure.accepts(this,BigInteger.ONE,runtime.lanes())
+                && runtime.speed().compareTo(BigInteger.ONE.shiftLeft(Math.max(0,ComputationStructure.threadPower(this)-1)))<=0;
+    }
     public boolean factoryOnline() { return factory!=null && settingsFit() && factory.isOnline() && machineRuntimes().stream().noneMatch(ProcessingRuntime::quarantined); }
     public int workState() {
         return machineRuntimes().stream().mapToInt(r->r.displayState(level.getGameTime())).max().orElse(0);
@@ -70,7 +75,7 @@ public abstract class BaseAccelerator extends AEBaseBlockEntity implements IGrid
         if(!record.getCompound("blueprint").getUUID("player").equals(player.getUUID()))
             throw new IllegalArgumentException("FACTORY_OWNER_MISMATCH");
         factory=openFactory(id);factoryId=id;factoryLoadAttempted=true;runtime=factory.runtime();
-        speedPower=runtime.speed().bitLength()-1;lanePower=runtime.lanes().bitLength()-1;setChanged();
+        loadedFactorySettings();setChanged();
     }
     public boolean ejectFactory(Player player) {
         return canAccess(player) && ejectFactoryAuthorized(player);
@@ -87,7 +92,7 @@ public abstract class BaseAccelerator extends AEBaseBlockEntity implements IGrid
         com.syaru.ae2machines.world.VirtualCellMetadata.populate((net.minecraft.server.level.ServerLevel)level,data);
         com.syaru.ae2machines.platform.PlatformData.setCellData(cell,data);
         factory.detach();factory=null;factoryId=null;runtime=new ProcessingRuntime(new MeteredEnergy("FE",BigInteger.valueOf(1000000),BigInteger.valueOf(1000000),BigInteger.ZERO,BigInteger.ZERO),ignored->checkpoint());
-        speedPower=0;lanePower=0;setChanged();
+        speedPower=0;lanePower=0;threadPower=0;legacyAcceleration=false;setChanged();
         if(!player.getInventory().add(cell)) player.drop(cell,false);return true;
     }
     protected void factoryCheckpoint() {
@@ -96,23 +101,63 @@ public abstract class BaseAccelerator extends AEBaseBlockEntity implements IGrid
     }
     public int speedPower() { return speedPower; }
     public int lanePower() { return lanePower; }
+    public int threadPower(){return threadPower;}
+    public boolean migratingAcceleration(){return legacyAcceleration;}
+    public int baseParallelPower(){return Math.max(0,lanePower-threadPower);}
+    public boolean exactParallelDisplay(){return runtime.lanes().bitCount()==1;}
+    public void refreshFactoryDisplaySettings(){
+        speedPower=runtime.speed().bitLength()-1;lanePower=runtime.lanes().bitLength()-1;
+        if(ComputationStructure.runnable(this)){
+            int minimum=Math.max(0,lanePower-ComputationStructure.baseParallelPower(this));
+            int maximum=Math.min(lanePower,ComputationStructure.threadPower(this));
+            if(minimum<=maximum)threadPower=Math.max(minimum,Math.min(threadPower,maximum));
+        }
+    }
+    protected void loadedFactorySettings(){
+        legacyAcceleration=ComputationStructure.modular(this) && runtime.speed().compareTo(BigInteger.ONE)>0;
+        refreshFactoryDisplaySettings();
+    }
     protected void restoreFactoryDisplaySettings(int speed,int lanes) {
         // API-owned exact settings can exceed the GUI's editable exponent range.
         if(speed<0 || speed>=1048576 || lanes<0 || lanes>=1048576)throw new IllegalArgumentException("INVALID_SAVED_FACTORY_SETTINGS");
         speedPower=speed;lanePower=lanes;
     }
+    protected void restoreFactoryDisplaySettings(int speed,int lanes,int threads){
+        restoreFactoryDisplaySettings(speed,lanes);
+        if(threads<0 || threads>9 || threads>lanes)throw new IllegalArgumentException("INVALID_SAVED_THREAD_SETTINGS");
+        threadPower=threads;legacyAcceleration=ComputationStructure.modular(this) && speed>0;
+    }
+    public boolean canSetParallelSettings(int threads,int base){
+        return threads>=0 && threads<=ComputationStructure.threadPower(this)
+                && base>=0 && base<=ComputationStructure.baseParallelPower(this)
+                && exactParallelDisplay() && canSetSettings(0,base+threads);
+    }
+    public boolean parallelSettings(int threads,int base){
+        if(!canSetParallelSettings(threads,base))return false;
+        settings(0,base+threads);threadPower=threads;setChanged();return true;
+    }
     public boolean canSetSettings(int speed,int lanes) {
-        return ComputationStructure.runnable(this) && !loadFailed && speed>=0 && lanes>=0 && speed<=3400 && lanes<=3400
+        return ComputationStructure.runnable(this) && !loadFailed && (factoryId==null || factory!=null)
+                && speed>=0 && lanes>=0 && speed<=3400 && lanes<=3400
                 && runtime.canConfigure() && (factory==null || factory.canConfigure())
                 && ComputationStructure.accepts(this,BigInteger.ONE.shiftLeft(speed),BigInteger.ONE.shiftLeft(lanes))
                 && (factory==null || factory.supportsConfiguration(BigInteger.ONE.shiftLeft(speed),BigInteger.ONE.shiftLeft(lanes)));
     }
     public void settings(int speed,int lanes) {
         if(!canSetSettings(speed,lanes))return;
-        speedPower = speed; lanePower = lanes;
         if(factory!=null)factory.configure(BigInteger.ONE.shiftLeft(speed),BigInteger.ONE.shiftLeft(lanes));
         else runtime.configure(BigInteger.ONE.shiftLeft(speed),BigInteger.ONE.shiftLeft(lanes));
-        setChanged();
+        legacyAcceleration=false;refreshFactoryDisplaySettings();setChanged();
+    }
+    private void retireLegacyAcceleration(){
+        if(!legacyAcceleration || !runtime.canConfigure() || factory!=null && !factory.canConfigure()
+                || !ComputationStructure.accepts(this,BigInteger.ONE,runtime.lanes()))return;
+        // Finish already-accounted jobs before changing their clock; never reinterpret S as extra Q.
+        if(factory!=null){
+            if(!factory.supportsConfiguration(BigInteger.ONE,runtime.lanes()))return;
+            factory.configure(BigInteger.ONE,runtime.lanes());
+        }else runtime.configure(BigInteger.ONE,runtime.lanes());
+        legacyAcceleration=false;refreshFactoryDisplaySettings();setChanged();
     }
     protected void failedLoad() { loadFailed = true; }
     public boolean loadFailed() { return loadFailed; }
@@ -146,7 +191,7 @@ public abstract class BaseAccelerator extends AEBaseBlockEntity implements IGrid
             factoryLoadAttempted=true;
             try {
                 factory=openFactory(factoryId);runtime=factory.runtime();
-                speedPower=runtime.speed().bitLength()-1;lanePower=runtime.lanes().bitLength()-1;
+                loadedFactorySettings();
             }
             catch(FactorySession.SourceChunkUnavailable e) { factoryLoadAttempted=false;nextFactoryLoadTick=level.getGameTime()+20; }
             catch(RuntimeException e) { failedLoad();org.slf4j.LoggerFactory.getLogger(BaseAccelerator.class).error("Factory {} could not resume",factoryId,e);return; }
@@ -155,6 +200,7 @@ public abstract class BaseAccelerator extends AEBaseBlockEntity implements IGrid
             if(getBlockState().getValue(AcceleratorBlock.ACTIVE))level.setBlock(worldPosition,getBlockState().setValue(AcceleratorBlock.ACTIVE,false),2);
             return;
         }
+        retireLegacyAcceleration();
         if(factory!=null && settingsFit()) factory.tick(level.getGameTime());else if(factory==null) runtime.tick(level.getGameTime());
         boolean active=factoryOnline();
         if(getBlockState().getValue(AcceleratorBlock.ACTIVE)!=active)

@@ -27,7 +27,8 @@ public final class ComputationPartBlock extends Block {
     public int tier() { return tier; }
     public int maximumPower() {
         if (kind != Kind.PARALLEL && kind != Kind.SPEED) throw new IllegalStateException("Not a processor");
-        return kind==Kind.SPEED?com.syaru.ae2machines.engine.ProcessorTiers.speedPower(tier):com.syaru.ae2machines.engine.ProcessorTiers.parallelPower(tier);
+        // Keep the registered SPEED IDs so existing placed cores and item stacks survive.
+        return kind==Kind.SPEED?com.syaru.ae2machines.engine.ProcessorTiers.threadPower(tier):com.syaru.ae2machines.engine.ProcessorTiers.parallelPower(tier);
     }
     @Override protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
         builder.add(FACING, ComputationHostBlock.FORMED);

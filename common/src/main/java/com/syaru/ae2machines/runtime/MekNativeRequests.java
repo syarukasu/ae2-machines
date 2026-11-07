@@ -21,6 +21,7 @@ public final class MekNativeRequests {
     private final NativeWorldSession session;
     private final FactoryJournal journal;
     private final Map<UUID,Entry> entries=new LinkedHashMap<>();
+    private final Map<BlockPos,List<Entry>> byMachine=new HashMap<>(),byProvider=new HashMap<>();
     private final Map<UUID,String> forgotten=new LinkedHashMap<>();
     private boolean loading=true,loadedQuarantine;
     private boolean tickBundle,dirty;
@@ -29,18 +30,22 @@ public final class MekNativeRequests {
     public MekNativeRequests(NativeWorldSession session,FactoryJournal journal){
         this.session=session;this.journal=journal;var saved=journal.read().getCompound("variableMekRequests");
         if(!saved.isEmpty() && saved.getInt("schema")!=1)throw new IllegalStateException("Unknown variable Mek request schema");
-        for(var value:saved.getList("entries",Tag.TAG_COMPOUND)){var e=new Entry((CompoundTag)value);if(entries.put(e.id,e)!=null)throw new IllegalStateException("Duplicate variable request");}
+        for(var value:saved.getList("entries",Tag.TAG_COMPOUND)){var e=new Entry((CompoundTag)value);if(entries.put(e.id,e)!=null)throw new IllegalStateException("Duplicate variable request");index(e);}
         for(var value:saved.getList("forgotten",Tag.TAG_COMPOUND)){var tag=(CompoundTag)value;forgotten.put(tag.getUUID("id"),tag.getString("digest"));}
         loading=false;if(loadedQuarantine)save();
     }
-    public boolean busy(BlockPos pos){return entries.values().stream().anyMatch(e->e.pos.equals(pos) && e.occupies());}
-    public boolean active(){return entries.values().stream().anyMatch(Entry::occupies);}
-    public boolean requiresWorldTicks(){return active() || entries.values().stream().anyMatch(e->e.state!=State.QUARANTINED && e.credit.signum()>0);}
+    public boolean busy(BlockPos pos){return occupied(byMachine.get(pos));}
+    private boolean occupied(List<Entry> candidates){if(candidates!=null)for(var e:candidates)if(e.occupies())return true;return false;}
+    private void index(Entry e){byMachine.computeIfAbsent(e.pos,p->new ArrayList<>()).add(e);byProvider.computeIfAbsent(e.provider,p->new ArrayList<>()).add(e);}
+    private void unindex(Entry e){remove(byMachine,e.pos,e);remove(byProvider,e.provider,e);}
+    private void remove(Map<BlockPos,List<Entry>> index,BlockPos pos,Entry e){var list=index.get(pos);if(list!=null){list.remove(e);if(list.isEmpty())index.remove(pos);}}
+    public boolean active(){for(var e:entries.values())if(e.occupies())return true;return false;}
+    public boolean requiresWorldTicks(){for(var e:entries.values())if(e.occupies() || e.state!=State.QUARANTINED && e.credit.signum()>0)return true;return false;}
     public boolean hasId(UUID id){return entries.containsKey(id) || forgotten.containsKey(id);}
     public boolean owns(UUID id,String digest){var e=entries.get(id);return e!=null && e.digest.equals(digest);}
     public boolean callerOwns(UUID id,String digest){var e=entries.get(id);return e!=null && e.route==Route.CALLER && e.digest.equals(digest);}
     public boolean forgotten(UUID id,String digest){return digest.equals(forgotten.get(id));}
-    public boolean providerBusy(BlockPos pos){return entries.values().stream().anyMatch(e->e.provider.equals(pos) && e.occupies());}
+    public boolean providerBusy(BlockPos pos){return occupied(byProvider.get(pos));}
     private record Candidate(BlockPos provider,TileEntityConfigurableMachine machine){}
     private List<Candidate> candidates(appeng.api.crafting.IPatternDetails pattern){
         var result=new ArrayList<Candidate>();
@@ -66,6 +71,7 @@ public final class MekNativeRequests {
     private boolean accept(Request request,Route route,String fingerprint,Map<AEKey,BigInteger> expected){
         flush();
         var old=entries.get(request.id());if(old!=null)return old.matches(request) && old.route==route && old.fingerprint.equals(fingerprint) && old.expected.equals(expected) && old.state!=State.CANCELLED;
+        if(session.host().migratingAcceleration())return false;
         if(session.batches().hasId(request.id()))return false;
         if(forgotten.containsKey(request.id()) || !session.isOnline() || request.executions().bitLength()>1048576)return false;
         // V2 owns CPU inputs; refuse custody when its output cannot be committed safely.
@@ -81,7 +87,7 @@ public final class MekNativeRequests {
                     if(java.util.stream.IntStream.range(0,MekRecipeMachines.processes(machine)).anyMatch(i->MekWorldParallel.progress(machine,i)>0))continue;
                     if(route!=Route.CALLER && !MekVariableWork.guarantees(machine,per,PatternProgram.outputTotals(request.pattern())))continue;
                     final Entry e;try{e=new Entry(request,machine,candidate.provider,per,route,fingerprint,expected);}catch(MekVariableWork.NoMatchingRecipe unmatched){continue;}
-                    journal.atomic(()->{entries.put(e.id,e);save();});return true;
+                    journal.atomic(()->{entries.put(e.id,e);index(e);save();});return true;
                 }
         return false;
     }
@@ -179,7 +185,7 @@ public final class MekNativeRequests {
     public boolean forget(UUID id,String digest){flush();if(forgotten.containsKey(id))return forgotten.get(id).equals(digest);var e=entries.get(id);
         if(e==null || !e.digest.equals(digest) || e.state!=State.ACKNOWLEDGED || e.credit.signum()!=0)return false;
         if(e.route==Route.EXACT && e.completed.equals(e.total) && !e.delivered.equals(e.partition().surplus()))return false;
-        entries.remove(id);forgotten.put(id,digest);save();return true;}
+        entries.remove(id);unindex(e);forgotten.put(id,digest);save();return true;}
     public BigInteger receiveFE(BigInteger offered,boolean simulate){
         if(!simulate)flush();
         ExactAmounts.nonnegative(offered);var left=offered;

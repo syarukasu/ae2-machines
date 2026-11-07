@@ -71,6 +71,7 @@ public final class NativeProcessingSchedule {
         refresh();
         if(thermal!=null){
             for(var ticker:thermal.tickers(thermalSource))if(!ticker.isRemoved()
+                    && (runtime.batches()==null || !runtime.batches().busy(ticker.getPos()))
                     && ((NativeThermalLevelAccess)world).machines$thermalTicking(ticker.getPos())){
                 ticker.tick();nativeCalls++;
             }

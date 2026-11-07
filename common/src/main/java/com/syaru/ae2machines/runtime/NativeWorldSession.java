@@ -105,6 +105,8 @@ public final class NativeWorldSession implements FactoryHandle {
     @Override public void configure(BigInteger speed,BigInteger lanes) {
         require(supportsConfiguration(speed,lanes),"NATIVE_WORLD_PARALLEL_EXECUTOR_NOT_AVAILABLE");
         var previousLanes=runtime.lanes();
+        if(NativeMachines.mek())com.syaru.ae2machines.compat.mek.FissionParallelState.configure(power.blocks(),
+                previousLanes.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValueExact(),lanes.min(BigInteger.valueOf(Integer.MAX_VALUE)).intValueExact());
         if(generic!=null && generic.hasTargets() && (!lanes.equals(previousLanes) || generic.needsInitialization() && generic.canConfigure(lanes)))generic.configure(lanes);
         runtime.configure(speed,lanes);NativeWorldRuntime.get(world).speed(speed);
         NativeWorldRuntime.get(world).state().lanes(lanes);

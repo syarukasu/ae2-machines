@@ -27,6 +27,7 @@ public final class MekRestorationStorage {
                              BiConsumer<CompoundTag,BigInteger> write){}
     public record HeatPort(BlockEntity owner,Address address,Object identity,Supplier<BigDecimal> heat,
                            Supplier<BigDecimal> pending,Supplier<BigDecimal> capacity,int lanes,
+                           Supplier<BigDecimal> keptHeat,Supplier<BigDecimal> keptPending,
                            BiConsumer<BigDecimal,BigDecimal> write){}
     public static final class Ports {
         public final Map<Address,AmountPort> amounts=new LinkedHashMap<>();
@@ -57,9 +58,15 @@ public final class MekRestorationStorage {
         public void heat(BlockEntity owner,String kind,int index,Object identity,Supplier<BigDecimal> heatValue,
                          Supplier<BigDecimal> pending,Supplier<BigDecimal> capacity,int lanes,
                          BiConsumer<BigDecimal,BigDecimal> write){
+            heat(owner,kind,index,identity,heatValue,pending,capacity,lanes,
+                    ()->decimal(heatValue.get().doubleValue()/lanes),()->decimal(pending.get().doubleValue()/lanes),write);
+        }
+        public void heat(BlockEntity owner,String kind,int index,Object identity,Supplier<BigDecimal> heatValue,
+                         Supplier<BigDecimal> pending,Supplier<BigDecimal> capacity,int lanes,
+                         Supplier<BigDecimal> keptHeat,Supplier<BigDecimal> keptPending,BiConsumer<BigDecimal,BigDecimal> write){
             if(seen.add(identity)){
                 var address=new Address(owner.getBlockPos().asLong(),kind,index);
-                if(heat.put(address,new HeatPort(owner,address,identity,heatValue,pending,capacity,lanes,write))!=null)throw new IllegalStateException("DUPLICATE_RESTORE_HEAT_CONTAINER");
+                if(heat.put(address,new HeatPort(owner,address,identity,heatValue,pending,capacity,lanes,keptHeat,keptPending,write))!=null)throw new IllegalStateException("DUPLICATE_RESTORE_HEAT_CONTAINER");
             }
         }
     }
@@ -102,8 +109,7 @@ public final class MekRestorationStorage {
             if(port.lanes<=1)continue;
             var before=port.heat.get();var pending=port.pending.get();var total=before.add(pending);
             require(total.signum()>=0 && Double.isFinite(total.doubleValue()),"INVALID_NATIVE_THERMAL_BALANCE");
-            double factor=port.lanes;
-            var kept=decimal(before.doubleValue()/factor);var keptPending=decimal(pending.doubleValue()/factor);
+            var kept=port.keptHeat.get();var keptPending=port.keptPending.get();
             // Keep both native queues. The residual owns the exact decimal difference, including rounding.
             while(kept.add(keptPending).compareTo(total)>0)kept=decimal(Math.nextDown(kept.doubleValue()));
             var remaining=total.subtract(kept).subtract(keptPending);
